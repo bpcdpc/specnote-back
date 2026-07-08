@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ROLE {
+  OWNER
+  MEMBER
+}
+
+enum REACTION_TYPE {
+  DONE // 처리됨
+  CHECKING // 확인중
+  BEST // 최고
+  ACK // 알겠음
+}
+
+enum NOTIFICATION_TYPE {
+  INVITED //프로젝트 초대
+  MENTIONED //댓글 맨션
+}
+
+// 사용자
+model User {
+  id                     Int             @id @default(autoincrement())
+  email                  String          @unique
+  userName               String
+  password               String
+  isAi                   Boolean         @default(false)
+  createdAt              DateTime        @default(now())
+  memberships            Membership[]
+  comments               Comment[]
+  recipientNotifications Notification[]  @relation("recipientNotification")
+  senderNotifications    Notification[]  @relation("senderNotification")
+  memberMentions         MemberMention[]
+  reactions              Reaction[]
+}
+
+// 프로젝트
+model Project {
+  id               Int               @id @default(autoincrement())
+  specJsonUrl      String //필수
+  tryItBaseUrl     String?
+  title            String //specJson 에서 자동입력
+  description      String? //specJson 에서 자동입력
+  version          String //specJson 에서 자동입력
+  oasVersion       String //스펙 문서 버전(예:OpanApi 3.0.0)
+  isDeleted        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  specSnapshots    SpecSnapshot[]
+  endpoints        Endpoint[]
+  memberships      Membership[]
+  comments         Comment[]
+  memberMentions   MemberMention[]
+  notifications    Notification[]
+  reactions        Reaction[]
+  endpointMentions EndpointMention[]
+}
+
+// specJson 스냅샷
+model SpecSnapshot {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  project   Project  @relation(fields: [projectId], references: [id])
+  rawJson   Json
+  createdAt DateTime @default(now())
+}
+
+// 프로젝트 사용자
+model Membership {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  project   Project  @relation(fields: [projectId], references: [id])
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  role      ROLE     @default(MEMBER)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+}
+
+// EndPoint
+model Endpoint {
+  id               Int               @id @default(autoincrement())
+  projectId        Int
+  project          Project           @relation(fields: [projectId], references: [id])
+  path             String
+  method           String
+  operationId      String?
+  summary          String?
+  tags             String[]
+  operationJson    Json
+  isDeleted        Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  comments         Comment[]
+  endpointMentions EndpointMention[]
+
+  @@unique([projectId, path, method])
+}
+
+// 댓글
+model Comment {
+  id               Int               @id @default(autoincrement())
+  endpointId       Int
+  endpoint         Endpoint          @relation(fields: [endpointId], references: [id])
+  userId           Int
+  user             User              @relation(fields: [userId], references: [id])
+  content          String
+  isDeleted        Boolean           @default(false)
+  replies          Comment[]         @relation("CommentRelation")
+  parentId         Int?
+  parent           Comment?          @relation("CommentRelation", fields: [parentId], references: [id])
+  projectId        Int
+  project          Project           @relation(fields: [projectId], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  memberMentions   MemberMention[]
+  notifications    Notification[]
+  reactions        Reaction[]
+  endpointMentions EndpointMention[]
+}
+
+// 사용자 Mention
+model MemberMention {
+  id              Int      @id @default(autoincrement())
+  commentId       Int
+  comment         Comment  @relation(fields: [commentId], references: [id])
+  mentionedUserId Int
+  mentionedUser   User     @relation(fields: [mentionedUserId], references: [id])
+  projectId       Int
+  project         Project  @relation(fields: [projectId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@unique([commentId, mentionedUserId]) // 한 커멘트에 한 유저에 대한 멘션이 중복될 수 없다.
+}
+
+// Endpoint Mention
+model EndpointMention {
+  id         Int      @id @default(autoincrement())
+  commentId  Int
+  comment    Comment  @relation(fields: [commentId], references: [id])
+  endpointId Int
+  endpoint   Endpoint @relation(fields: [endpointId], references: [id])
+  projectId  Int
+  project    Project  @relation(fields: [projectId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([commentId, endpointId]) // 한 커멘트에 한 엔드포인트에 대한 멘션이 중복될 수 없다.
+}
+
+// 댓글 리액션
+model Reaction {
+  id        Int           @id @default(autoincrement())
+  commentId Int
+  comment   Comment       @relation(fields: [commentId], references: [id])
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id])
+  type      REACTION_TYPE
+  projectId Int
+  project   Project       @relation(fields: [projectId], references: [id])
+  createdAt DateTime      @default(now())
+
+  @@unique([commentId, userId, type]) // 한 커멘트에 한 유저가 같은 타입의 리액션을 여러개 줄 수 없다.
+}
+
+// 알림
+model Notification {
+  id                 Int               @id @default(autoincrement())
+  recipientId        Int //알림받는 사용자
+  recipient          User              @relation("recipientNotification", fields: [recipientId], references: [id])
+  senderId           Int // 알림을 발생시킨 사람 (누가 멘션/답글 했는지)
+  sender             User              @relation("senderNotification", fields: [senderId], references: [id])
+  type               NOTIFICATION_TYPE
+  isRead             Boolean           @default(false)
+  mentionedCommentId Int? //맨션된 댓글 ID
+  mentionedComment   Comment?          @relation(fields: [mentionedCommentId], references: [id])
+  invitedProjectId   Int?
+  invitedProject     Project?          @relation(fields: [invitedProjectId], references: [id])
+  createdAt          DateTime          @default(now())
+}
