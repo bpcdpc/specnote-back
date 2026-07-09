@@ -25,7 +25,15 @@ export class AiSummaryService {
 
   // 시드된 전역 AI 계정 (User.isAi = true)
   private async findAiUser(): Promise<User> {
-    // TODO: isAi=true 유저 조회 (없으면 시드 필요)
-    throw new Error('not implemented');
+    const ai = await this.prisma.user.findFirst({
+      where: { isAi: true },
+    });
+    if (!ai) {
+      // 시드 안 돌린 환경 방지 — 명확한 메시지로 안내
+      throw new Error(
+        'AI 계정이 없습니다. npx prisma db seed 를 먼저 실행하세요.',
+      );
+    }
+    return ai;
   }
 }
