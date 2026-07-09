@@ -1,34 +1,37 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { type AuthUser } from '../common/types/auth.type';
 import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
 
+// 계층 1: recipientId 본인 스코프, projectId 없음 → JwtAuthGuard 만
+@ApiTags('notifications')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
-  @Post()
-  create(@Body() createNotificationDto: CreateNotificationDto) {
-    return this.notificationsService.create(createNotificationDto);
-  }
-
+  @ApiOperation({ summary: '내 알림 목록' })
   @Get()
-  findAll() {
-    return this.notificationsService.findAll();
+  findNotifications(@CurrentUser() user: AuthUser) {
+    return this.notificationsService.findNotifications(user.id);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.notificationsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateNotificationDto: UpdateNotificationDto) {
-    return this.notificationsService.update(+id, updateNotificationDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.notificationsService.remove(+id);
+  @ApiOperation({ summary: '알림 읽음 처리' })
+  @Patch(':id/read')
+  markAsRead(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.notificationsService.markAsRead(user.id, id);
   }
 }

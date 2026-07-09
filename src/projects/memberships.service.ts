@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Membership } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MembershipsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationsService,
+  ) {}
 
   // POST /projects/:id/members — 초대
   async inviteMember(
@@ -16,7 +20,7 @@ export class MembershipsService {
     // TODO
     // 1. dto.email 로 유저 조회 (없으면 초대 대상 없음 처리)
     // 2. membership upsert: 있으면 isDeleted=false 부활, 없으면 role=MEMBER 로 생성
-    // 3. INVITED 알림 생성
+    // 3. INVITED 알림 생성: this.notificationService.createNotification({ type: INVITED, ... }) 이런식으로 호출
     throw new Error('not implemented');
   }
 
