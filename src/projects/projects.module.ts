@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ProjectsService } from './projects.service';
 import { ProjectsController } from './projects.controller';
+import { ProjectsService } from './projects.service';
+import { MembershipsService } from './memberships.service';
+import { MembershipGuard } from '../common/guards/membership.guard';
 
 @Module({
   controllers: [ProjectsController],
-  providers: [ProjectsService],
+  providers: [ProjectsService, MembershipsService, MembershipGuard],
 })
 export class ProjectsModule {}
