@@ -1,9 +1,14 @@
 import { Module } from '@nestjs/common';
-import { EndpointsService } from './endpoints.service';
+import { ProjectsModule } from '../projects/projects.module';
 import { EndpointsController } from './endpoints.controller';
+import { EndpointsService } from './endpoints.service';
+import { MembershipGuard } from '../common/guards/membership.guard';
 
 @Module({
+  // ProjectsService(getLatestSnapshotVersion) 를 쓰기 위해 ProjectsModule import
+  // ProjectsModule에서 ProjectsService를 exports 해줘야지 받아서 쓸 수 있음
+  imports: [ProjectsModule],
   controllers: [EndpointsController],
-  providers: [EndpointsService],
+  providers: [EndpointsService, MembershipGuard],
 })
 export class EndpointsModule {}

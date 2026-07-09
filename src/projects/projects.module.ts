@@ -7,5 +7,7 @@ import { MembershipGuard } from '../common/guards/membership.guard';
 @Module({
   controllers: [ProjectsController],
   providers: [ProjectsService, MembershipsService, MembershipGuard],
+  // endpoints 등 다른 모듈이 getLatestSnapshotVersion 을 쓰므로 export
+  exports: [ProjectsService],
 })
 export class ProjectsModule {}

@@ -1,16 +1,27 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { ProjectsService } from '../projects/projects.service';
+import { EndpointDetail } from './endpoints.type';
 
 @Injectable()
 export class EndpointsService {
-  findAll() {
-    return `This action returns all endpoints`;
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    // ProjectsService의 getLatestSnapshotVersion 을 쓰기 위해서 생성자에 넘겨준다.
+    // 최신 snapshotId 를 받아오는 용도이다.
+    private readonly projectsService: ProjectsService,
+  ) {}
 
-  findOne(id: number) {
-    return `This action returns a #${id} endpoint`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} endpoint`;
+  // GET /endpoints/:id — 엔드포인트 상세
+  async findEndpointDetail(
+    userId: number,
+    endpointId: number,
+  ): Promise<EndpointDetail> {
+    // TODO
+    // 1. endpoint 조회 (projectId 포함, 없으면 NotFound)
+    //    * 멤버십 검증은 가드(@ProjectScope('endpoint'))가 이미 수행
+    // 2. projectsService.getLatestSnapshotVersion(projectId) 로 최신 snapshotId
+    // 3. EndpointDetail 로 매핑 (operationJson 은 그대로 pass-through)
+    throw new Error('not implemented');
   }
 }

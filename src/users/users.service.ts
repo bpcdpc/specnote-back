@@ -2,9 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
-
-// 비밀번호를 제외한 공개 형태 (정의서 공통타입)
-export type PublicUser = { id: number; userName: string; email: string };
+import { type PublicUser } from '../common/types/auth.type';
 
 @Injectable()
 export class UsersService {
