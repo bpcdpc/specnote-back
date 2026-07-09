@@ -1,0 +1,767 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/users": {
+      "post": {
+        "operationId": "UsersController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[관리자] 회원 등록",
+        "tags": ["users"]
+      },
+      "get": {
+        "operationId": "UsersController_findAll",
+        "parameters": [
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["ADMIN", "PROFESSOR", "STUDENT"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[관리자] 회원 목록 조회 ",
+        "tags": ["users"]
+      }
+    },
+    "/users/me": {
+      "get": {
+        "operationId": "UsersController_findMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[회원] 내 정보 조회",
+        "tags": ["users"]
+      },
+      "patch": {
+        "operationId": "UsersController_updateMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[회원] 내 정보 수정",
+        "tags": ["users"]
+      }
+    },
+    "/users/me/password": {
+      "patch": {
+        "operationId": "UsersController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[회원] 비밀번호 변경",
+        "tags": ["users"]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UsersController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[관리자] 특정 회원 조회",
+        "tags": ["users"]
+      },
+      "patch": {
+        "operationId": "UsersController_updateByAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[관리자] 특정 회원 정보 수정",
+        "tags": ["users"]
+      },
+      "delete": {
+        "operationId": "UsersController_removeByAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[관리자] 특정 회원 강제 탈퇴",
+        "tags": ["users"]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Public] 로그인 (학번/직번)",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/login/admin": {
+      "post": {
+        "operationId": "AuthController_loginAdmin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "[Public] 관리자 로그인 (이메일)",
+        "tags": ["auth"]
+      }
+    },
+    "/courses": {
+      "post": {
+        "operationId": "CoursesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[교수] 강의 개설",
+        "tags": ["courses"]
+      },
+      "get": {
+        "operationId": "CoursesController_findAll",
+        "parameters": [
+          {
+            "name": "title",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "소프트웨어 공학",
+              "type": "string"
+            }
+          },
+          {
+            "name": "courseType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "MAJOR_FOUNDATION",
+                "MAJOR_REQUIRED",
+                "MAJOR_ELECTIVE",
+                "GENERAL_REQUIRED",
+                "GENERAL_ELECTIVE",
+                "FREE_ELECTIVE",
+                "TEACHING_PROFESSION"
+              ]
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 2026,
+              "type": "number"
+            }
+          },
+          {
+            "name": "semesterType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "FIRST_SEMESTER",
+                "SECOND_SEMESTER",
+                "SUMMER_SESSION",
+                "WINTER_SESSION"
+              ]
+            }
+          },
+          {
+            "name": "professorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[회원] 강의 목록 조회",
+        "tags": ["courses"]
+      }
+    },
+    "/courses/{id}": {
+      "get": {
+        "operationId": "CoursesController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[회원] 특정 강의 조회",
+        "tags": ["courses"]
+      },
+      "patch": {
+        "operationId": "CoursesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCourseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[교수] 강의 수정",
+        "tags": ["courses"]
+      },
+      "delete": {
+        "operationId": "CoursesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[교수|관리자] 강의 삭제",
+        "tags": ["courses"]
+      }
+    },
+    "/enrollments": {
+      "post": {
+        "operationId": "EnrollmentsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnrollmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[학생] 수강 신청",
+        "tags": ["enrollments"]
+      }
+    },
+    "/enrollments/me": {
+      "get": {
+        "operationId": "EnrollmentsController_findMyEnrollments",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[학생] 내 수강 신청 목록",
+        "tags": ["enrollments"]
+      }
+    },
+    "/enrollments/course/{courseId}": {
+      "get": {
+        "operationId": "EnrollmentsController_findByCourse",
+        "parameters": [
+          {
+            "name": "courseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[교수] 특정 강의 수강생 목록",
+        "tags": ["enrollments"]
+      }
+    },
+    "/enrollments/{id}": {
+      "delete": {
+        "operationId": "EnrollmentsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "[학생|관리자] 수강 신청 취소",
+        "tags": ["enrollments"]
+      }
+    }
+  },
+  "info": {
+    "title": "수강신청 시스템",
+    "description": "학교 회원 아이디 발급 / 수업 개설 / 수강 신청",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": ""
+    },
+    {
+      "name": "users",
+      "description": ""
+    },
+    {
+      "name": "courses",
+      "description": ""
+    },
+    {
+      "name": "enrollments",
+      "description": ""
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "홍길동"
+          },
+          "email": {
+            "type": "string",
+            "example": "user@univ.ac.kr"
+          },
+          "phone": {
+            "type": "string",
+            "example": "01012345678"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["ADMIN", "PROFESSOR", "STUDENT"],
+            "example": "STUDENT"
+          }
+        },
+        "required": ["name", "email", "phone", "role"]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "홍길동"
+          },
+          "email": {
+            "type": "string",
+            "example": "user@univ.ac.kr"
+          },
+          "phone": {
+            "type": "string",
+            "example": "01012345678"
+          }
+        }
+      },
+      "UpdatePasswordDto": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "example": "secret1234",
+            "description": "10글자 이상"
+          },
+          "currentPassword": {
+            "type": "string",
+            "example": "0000",
+            "description": "초기 비밀번호는 0000입니다."
+          }
+        },
+        "required": ["newPassword", "currentPassword"]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "idNumber": {
+            "type": "string",
+            "example": "20260000"
+          },
+          "password": {
+            "type": "string",
+            "example": "secret1234"
+          }
+        },
+        "required": ["idNumber", "password"]
+      },
+      "AdminLoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "admin@univ.ac.kr"
+          },
+          "password": {
+            "type": "string",
+            "example": "admin1234"
+          }
+        },
+        "required": ["email", "password"]
+      },
+      "CreateCourseDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "소프트웨어개발 방법론"
+          },
+          "courseType": {
+            "type": "string",
+            "example": "MAJOR_ELECTIVE"
+          },
+          "credits": {
+            "type": "number",
+            "example": 3
+          },
+          "capacity": {
+            "type": "number",
+            "example": 10
+          },
+          "timeTables": {
+            "example": [
+              {
+                "dayOfWeek": "MON",
+                "hour": 1
+              },
+              {
+                "dayOfWeek": "MON",
+                "hour": 2
+              },
+              {
+                "dayOfWeek": "MON",
+                "hour": 3
+              }
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["title", "courseType", "credits", "capacity", "timeTables"]
+      },
+      "UpdateCourseDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "소프트웨어개발 방법론"
+          },
+          "courseType": {
+            "type": "string",
+            "example": "MAJOR_ELECTIVE"
+          },
+          "credits": {
+            "type": "number",
+            "example": 3
+          },
+          "capacity": {
+            "type": "number",
+            "example": 10
+          },
+          "timeTables": {
+            "example": [
+              {
+                "dayOfWeek": "MON",
+                "hour": 1
+              },
+              {
+                "dayOfWeek": "MON",
+                "hour": 2
+              },
+              {
+                "dayOfWeek": "MON",
+                "hour": 3
+              }
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreateEnrollmentDto": {
+        "type": "object",
+        "properties": {
+          "courseId": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": ["courseId"]
+      }
+    }
+  }
+}
