@@ -1,19 +1,26 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { jwtConstants } from '../constants';
+import type { JwtPayload, AuthUser } from '../../common/types/auth.type';
 
+@Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {
-    super({
-      //Authorization: Bearer <토큰> -> 헤더에서 jwt 추출
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), //만료된 토큰은 거부(AuthModule signOption.expiresIn 설정)
-      ignoreExpiration: false, //로그인 시에 sign()에 쓴 secret 과 동일해야 검증 성공
-      secretOrKey: jwtConstants.secret,
-    });
-  } //passport-jwt 가 서명 완료된거 확인한 뒤에 payload  넘긴다.
-  //반환값은 req.user 된다. req.user 뽑아쓰면 아래 return 그대로 볼 수 있다.
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET 미설정');
 
-  validate(payload: any) {
-    return { id: payload.sub, email: payload.email, role: payload.role };
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: secret,
+    });
+  }
+
+  // Passport 가 서명 검증에 성공한 뒤 호출. 반환값이 req.user 가 됨.
+  validate(payload: JwtPayload): AuthUser {
+    if (typeof payload?.sub !== 'number') {
+      throw new UnauthorizedException('잘못된 토큰 payload');
+    }
+    return { id: payload.sub, email: payload.email };
   }
 }

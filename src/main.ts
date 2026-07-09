@@ -9,6 +9,8 @@ async function bootstrap() {
   // transform: ?page=2 2문자열인데 숫자 2로 자동변환. service에서 number로 형변환
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
+  app.setGlobalPrefix('api');
+
   //Swagger
   const config = new DocumentBuilder()
     .setTitle('specnote-back')

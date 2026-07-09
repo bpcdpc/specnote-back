@@ -1,34 +1,27 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { UsersService } from './users.service';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { UsersService, PublicUser } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
 
+@ApiTags('users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  // POST /api/users — 회원가입 (인증 불필요, 계층 0)
+  @ApiOperation({ summary: '회원 가입' })
   @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  createUser(@Body() dto: CreateUserDto): Promise<PublicUser> {
+    return this.usersService.createUser(dto);
   }
 
-  @Get()
-  findAll() {
-    return this.usersService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(+id, updateUserDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(+id);
+  // GET /api/users/search?email= — 초대용 이메일 검색 (로그인 사용자만, 계층 1)
+  @ApiOperation({ summary: '이메일로 회원 검색' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('search')
+  findByEmail(@Query('email') email: string): Promise<PublicUser | null> {
+    return this.usersService.findByEmail(email);
   }
 }
