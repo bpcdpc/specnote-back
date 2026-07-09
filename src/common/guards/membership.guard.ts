@@ -68,13 +68,14 @@ export class MembershipGuard implements CanActivate {
 
     // @ProjectScope 있음 → 해당 테이블에서 projectId 역참조
     // endpoint / comment 둘 다 projectId 를 직접 보유 → 단일 조회
+    // (없을 때도 404 로 통일해 존재 은닉 — 아래 checkMembership 과 같은 정책)
     switch (source) {
       case 'endpoint': {
         const row = await this.prisma.endpoint.findUnique({
           where: { id },
           select: { projectId: true },
         });
-        if (!row) throw new NotFoundException('엔드포인트 없음');
+        if (!row) throw new NotFoundException('찾을 수 없음');
         return row.projectId;
       }
       case 'comment': {
@@ -82,7 +83,7 @@ export class MembershipGuard implements CanActivate {
           where: { id },
           select: { projectId: true },
         });
-        if (!row) throw new NotFoundException('댓글 없음');
+        if (!row) throw new NotFoundException('찾을 수 없음');
         return row.projectId;
       }
       default: {
@@ -93,7 +94,9 @@ export class MembershipGuard implements CanActivate {
     }
   }
 
-  // 2) 멤버십 확인 (없거나 소프트 삭제면 거부). role 이 이 행에 포함돼 있어 재조회 불필요.
+  // 2) 멤버십 확인 (없거나 소프트 삭제면 거부).
+  //    명세 0-8: 비멤버에게는 403 이 아니라 404 — 리소스 존재 자체를 은닉
+  //    (id 가 순차 정수라 403 을 주면 "존재하지만 권한 없음"이 노출됨)
   private async checkMembership(
     projectId: number,
     userId: number,
@@ -102,12 +105,13 @@ export class MembershipGuard implements CanActivate {
       where: { projectId_userId: { projectId, userId } },
     });
     if (!membership || membership.isDeleted) {
-      throw new ForbiddenException('프로젝트 멤버가 아님');
+      throw new NotFoundException('찾을 수 없음');
     }
     return membership;
   }
 
-  // 3) 역할 검증 (@ProjectRole 없으면 스킵)
+  // 3) 역할 검증 (@ProjectRole 없으면 스킵).
+  //    명세 0-8: 구성원이지만 Owner 아님 → 403 (존재는 이미 알므로 은닉 불필요)
   private checkRole(context: ExecutionContext, membership: Membership): void {
     const required = this.reflector.getAllAndOverride<ROLE | undefined>(
       PROJECT_ROLE_KEY,

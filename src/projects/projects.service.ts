@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CommitSpecDto } from './dto/commit-spec.dto';
-import { ExtractedEndpoint } from './utils/spec.type';
+import { loadSpec } from './utils/spec-loader';
+import { extractSpecInfo, extractEndpoints } from './utils/spec-extractor';
+import { ExtractedEndpoint, SpecResult } from './utils/spec.type';
 import {
   EndpointDiff,
   ProjectSummary,
@@ -21,13 +27,35 @@ export class ProjectsService {
     ownerId: number,
     dto: CreateProjectDto,
   ): Promise<ProjectView> {
-    // TODO
-    // 1. [tx 밖] loadSpec(dto.specJsonUrl) → 실패(!ok)면 code별 BadRequestException
-    // 2. [tx 밖] extractSpecInfo(spec) / extractEndpoints(spec)
-    // 3. [tx] project 생성(메타 title/description/version/oasVersion 인라인 대입) + Owner 멤버십 생성
-    // 4. [tx] applySpecCommit(tx, project.id, extracted, rawJson)
-    // 5. 생성 결과를 ProjectView 로 반환 (findProject 재사용해도 됨)
-    throw new Error('not implemented');
+    // [트랜잭션 밖] 네트워크 fetch·검증·추출
+    const loaded = await loadSpec(dto.specJsonUrl);
+    if (!loaded.ok) this.throwSpecError(loaded);
+
+    const extracted = extractEndpoints(loaded.spec);
+    const info = extractSpecInfo(loaded.spec);
+    const rawJson = loaded.spec as unknown as Prisma.InputJsonValue;
+
+    // [트랜잭션] 프로젝트 + Owner 멤버십 + 스냅샷/엔드포인트
+    const projectId = await this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          specJsonUrl: dto.specJsonUrl,
+          tryItBaseUrl: dto.tryItBaseUrl ?? null,
+          title: info.title,
+          description: info.description ?? null,
+          version: info.version,
+          oasVersion: loaded.oas,
+          memberships: { create: { userId: ownerId, role: 'OWNER' } },
+        },
+        select: { id: true },
+      });
+
+      await this.applySpecCommit(tx, project.id, extracted, rawJson);
+      return project.id;
+    });
+
+    // 커밋된 상태를 ProjectView 로 반환 (findProject 재사용)
+    return this.findProject(ownerId, projectId);
   }
 
   // GET /projects — 내가 멤버인 프로젝트 목록
@@ -38,8 +66,57 @@ export class ProjectsService {
 
   // GET /projects/:id — 프로젝트 진입
   async findProject(userId: number, projectId: number): Promise<ProjectView> {
-    // TODO: project 메타 + endpoints(EndpointSummary[], 삭제 포함) + 최신 스냅샷의 components/snapshotId
-    throw new Error('not implemented');
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+    });
+    if (!project) throw new NotFoundException('프로젝트 없음');
+
+    // role 취득 (가드가 멤버십은 이미 검증했지만, 뷰에 role 이 필요)
+    const membership = await this.prisma.membership.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { role: true },
+    });
+    if (!membership) throw new NotFoundException('프로젝트 없음');
+
+    // 엔드포인트 경량 목록 (삭제 포함)
+    const endpoints = await this.prisma.endpoint.findMany({
+      where: { projectId },
+      select: {
+        id: true,
+        path: true,
+        method: true,
+        summary: true,
+        tags: true,
+        isDeleted: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    // 최신 스냅샷에서 components + snapshotId
+    const snapshot = await this.prisma.specSnapshot.findFirst({
+      where: { projectId },
+      orderBy: { id: 'desc' },
+      select: { id: true, rawJson: true },
+    });
+    const components =
+      (snapshot?.rawJson as { components?: unknown } | null)?.components ??
+      null;
+
+    return {
+      project: {
+        id: project.id,
+        title: project.title,
+        description: project.description,
+        version: project.version,
+        oasVersion: project.oasVersion,
+        role: membership.role,
+        isDeleted: project.isDeleted,
+      },
+      tryItBaseUrl: project.tryItBaseUrl,
+      components,
+      snapshotId: snapshot?.id ?? 0,
+      endpoints,
+    };
   }
 
   // PATCH /projects/:id — tryItBaseUrl 만 수정 (커밋 없음)
@@ -64,11 +141,37 @@ export class ProjectsService {
     projectId: number,
     dto: CommitSpecDto,
   ): Promise<SpecCommitResult> {
-    // TODO
-    // 1. url = dto.specJsonUrl ?? project.specJsonUrl
-    // 2. [tx 밖] loadSpec(url) → 실패면 BadRequestException / extract
-    // 3. [tx] 메타 update + applySpecCommit(tx, projectId, extracted, rawJson)
-    throw new Error('not implemented');
+    // 기존 URL 확보 (dto 에 없으면 등록된 URL 을 재fetch)
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { specJsonUrl: true },
+    });
+    if (!project) throw new NotFoundException('프로젝트 없음');
+
+    const url = dto.specJsonUrl ?? project.specJsonUrl;
+
+    // [트랜잭션 밖] fetch·검증·추출
+    const loaded = await loadSpec(url);
+    if (!loaded.ok) this.throwSpecError(loaded);
+
+    const extracted = extractEndpoints(loaded.spec);
+    const info = extractSpecInfo(loaded.spec);
+    const rawJson = loaded.spec as unknown as Prisma.InputJsonValue;
+
+    // [트랜잭션] 메타 갱신(리로드 시에만, FR-1.9) + 스냅샷 append + 엔드포인트 diff
+    return this.prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          specJsonUrl: url,
+          title: info.title,
+          description: info.description ?? null,
+          version: info.version,
+          oasVersion: loaded.oas,
+        },
+      });
+      return this.applySpecCommit(tx, projectId, extracted, rawJson);
+    });
   }
 
   // 최신 스냅샷 id (프론트 버전 정합성용)
@@ -77,8 +180,7 @@ export class ProjectsService {
     throw new Error('not implemented');
   }
 
-  // ── 아래 3개는 스펙 커밋 핵심 로직 (난이도 높음, 리드가 담당 권장) ──
-  // createProject / commitSpec 에서만 호출하는 공유 tx 헬퍼. 여기서 트랜잭션을 열지 않음.
+  // ── 공유 tx 헬퍼 (createProject / commitSpec 공용, 트랜잭션 열지 않음) ──
 
   private async applySpecCommit(
     tx: Prisma.TransactionClient,
@@ -86,26 +188,109 @@ export class ProjectsService {
     extracted: ExtractedEndpoint[],
     rawJson: Prisma.InputJsonValue,
   ): Promise<SpecCommitResult> {
-    // TODO: createSnapshot + syncEndpoints → { snapshotId, diff } 반환
-    throw new Error('not implemented');
+    const snapshotId = await this.createSnapshot(tx, projectId, rawJson);
+    const diff = await this.syncEndpoints(tx, projectId, extracted);
+    return { snapshotId, diff };
   }
 
+  // 스냅샷 append-only. id 만 반환.
   private async createSnapshot(
     tx: Prisma.TransactionClient,
     projectId: number,
     rawJson: Prisma.InputJsonValue,
   ): Promise<number> {
-    // TODO: SpecSnapshot append(덮어쓰지 않음) → id 반환
-    throw new Error('not implemented');
+    const snap = await tx.specSnapshot.create({
+      data: { projectId, rawJson },
+      select: { id: true },
+    });
+    return snap.id;
   }
 
+  // 엔드포인트 동기화: upsert(부활 포함) + 사라진 것 소프트삭제. 동일성 = (projectId, path, method)
   private async syncEndpoints(
     tx: Prisma.TransactionClient,
     projectId: number,
     extracted: ExtractedEndpoint[],
   ): Promise<EndpointDiff> {
-    // TODO: upsert(부활 포함, isDeleted=false) + 사라진 것 소프트삭제 → diff 카운트 반환
-    // 동일성 기준 = (projectId, path, method)
-    throw new Error('not implemented');
+    const seen = new Set(extracted.map((e) => this.key(e.path, e.method)));
+
+    // 기존 전체(삭제 포함) — diff 카운트와 사라진 것 판정에 사용
+    const existing = await tx.endpoint.findMany({
+      where: { projectId },
+      select: { id: true, path: true, method: true, isDeleted: true },
+    });
+    const existingMap = new Map(
+      existing.map((e) => [this.key(e.path, e.method), e]),
+    );
+
+    let added = 0;
+    let updated = 0;
+    let revived = 0;
+
+    // upsert (신규 / 갱신 / 부활)
+    for (const ep of extracted) {
+      const prev = existingMap.get(this.key(ep.path, ep.method));
+      if (!prev) added++;
+      else if (prev.isDeleted) revived++;
+      else updated++;
+
+      await tx.endpoint.upsert({
+        where: {
+          projectId_path_method: {
+            projectId,
+            path: ep.path,
+            method: ep.method,
+          },
+        },
+        create: {
+          projectId,
+          path: ep.path,
+          method: ep.method,
+          operationId: ep.operationId ?? null,
+          summary: ep.summary ?? null,
+          tags: ep.tags,
+          operationJson: ep.operationJson,
+          isDeleted: false,
+        },
+        update: {
+          operationId: ep.operationId ?? null,
+          summary: ep.summary ?? null,
+          tags: ep.tags,
+          operationJson: ep.operationJson,
+          isDeleted: false, // 부활 시 되살림
+        },
+      });
+    }
+
+    // 이번 스펙에 없는 현존 엔드포인트 → 소프트 삭제
+    const staleIds = existing
+      .filter((e) => !e.isDeleted && !seen.has(this.key(e.path, e.method)))
+      .map((e) => e.id);
+    let removed = 0;
+    if (staleIds.length > 0) {
+      await tx.endpoint.updateMany({
+        where: { id: { in: staleIds } },
+        data: { isDeleted: true },
+      });
+      removed = staleIds.length;
+    }
+
+    return { added, removed, updated, revived };
+  }
+
+  private key(path: string, method: string): string {
+    return `${method} ${path}`;
+  }
+
+  // SpecResult 실패를 HTTP 에러로 (code 를 실어 프론트/필터에서 분기)
+  private throwSpecError(r: Extract<SpecResult, { ok: false }>): never {
+    switch (r.code) {
+      case 'INVALID_SPEC':
+        throw new BadRequestException({ code: r.code, errors: r.errors });
+      case 'UNSUPPORTED_VERSION':
+        throw new BadRequestException({ code: r.code, version: r.version });
+      case 'SPEC_LOAD_ERROR':
+        throw new BadRequestException({ code: r.code, error: r.error });
+    }
   }
 }
