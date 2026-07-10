@@ -27,7 +27,14 @@ export class MembershipsService {
       throw new NotFoundException('사용자 이메일 없음');
     }
 
-    const membershipCheck=await this.getMembership(user.id, projectId);
+    const membershipCheck = await this.prisma.membership.findUnique({
+      where: {
+        projectId_userId: {
+          projectId: projectId,
+          userId: user.id,
+        },
+      },
+    });
     if(membershipCheck && membershipCheck.isDeleted === false){
       throw new ConflictException('이미 멤버로 존재합니다.');
     }
