@@ -176,8 +176,13 @@ export class ProjectsService {
 
   // 최신 스냅샷 id (프론트 버전 정합성용)
   async getLatestSnapshotVersion(projectId: number): Promise<number> {
-    // TODO: 해당 projectId 의 가장 최근 SpecSnapshot.id
-    throw new Error('not implemented');
+    const snapshot = await this.prisma.specSnapshot.findFirst({
+      where: { projectId },
+      orderBy: { id: 'desc' },
+      select: { id: true },
+    });
+    if (!snapshot) throw new NotFoundException('프로젝트 스냅샷 없음');
+    return snapshot?.id ?? 0;
   }
 
   // ── 공유 tx 헬퍼 (createProject / commitSpec 공용, 트랜잭션 열지 않음) ──

@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { Membership } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Membership, NOTIFICATION_TYPE, ROLE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -17,11 +17,47 @@ export class MembershipsService {
     projectId: number,
     dto: CreateMembershipDto,
   ): Promise<Membership> {
-    // TODO
     // 1. dto.email 로 유저 조회 (없으면 초대 대상 없음 처리)
     // 2. membership upsert: 있으면 isDeleted=false 부활, 없으면 role=MEMBER 로 생성
     // 3. INVITED 알림 생성: this.notificationService.createNotification({ type: INVITED, ... }) 이런식으로 호출
-    throw new Error('not implemented');
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!user) {
+      throw new NotFoundException('사용자 이메일 없음');
+    }
+
+    const membershipCheck=await this.getMembership(user.id, projectId);
+    if(membershipCheck && membershipCheck.isDeleted === false){
+      throw new ConflictException('이미 멤버로 존재합니다.');
+    }
+    //멤버십 저장
+    const membership = await this.prisma.membership.upsert({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: user.id,
+        },
+      },
+      update: {
+        isDeleted: false,
+      },
+      create: {
+        projectId,
+        userId: user.id,
+        role: ROLE.MEMBER,
+      },
+    });
+
+    //초대 알림 생성
+    await this.notificationService.createNotification(ownerId, {
+      recipientId: user.id,
+      type: NOTIFICATION_TYPE.INVITED,
+      senderId: ownerId,
+      invitedProjectId: projectId,
+    });
+    
+    return membership;
   }
 
   // DELETE /projects/:id/members/:userId — 제거(소프트)
@@ -30,14 +66,35 @@ export class MembershipsService {
     projectId: number,
     targetUserId: number,
   ): Promise<Membership> {
-    // TODO: isDeleted = true → 갱신된 Membership 반환
-    throw new Error('not implemented');
+    // isDeleted = true → 갱신된 Membership 반환
+    const membershipCheck=await this.getMembership(targetUserId, projectId);
+    if(membershipCheck && membershipCheck.isDeleted){
+      throw new ConflictException('비활성된 멤버입니다.');
+    }
+    const membership = await this.prisma.membership.update({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: targetUserId,
+        },
+      },
+      data: {
+        isDeleted: true,
+      },
+    });
+    return membership;
   }
 
   // GET /projects/:id/members — 멤버 목록
   async findMembers(userId: number, projectId: number): Promise<Membership[]> {
-    // TODO: 해당 프로젝트의 isDeleted=false 멤버십 목록
-    throw new Error('not implemented');
+    // 해당 프로젝트의 isDeleted=false 멤버십 목록
+    const memberships = await this.prisma.membership.findMany({
+      where: {
+        projectId,
+        isDeleted: false,
+      },
+    });
+    return memberships;
   }
 
   // 멤버십 단건 조회 (없으면 null). 접근 검증 등에 사용.
@@ -45,7 +102,15 @@ export class MembershipsService {
     userId: number,
     projectId: number,
   ): Promise<Membership | null> {
-    // TODO: findUnique projectId_userId
-    throw new Error('not implemented');
+    const membership = await this.prisma.membership.findUnique({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId,
+        },
+      },
+    });
+    if (!membership) throw new NotFoundException('프로젝트 사용자 없음');
+    return membership;
   }
 }
