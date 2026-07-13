@@ -84,10 +84,10 @@ class JwtAuthGuard extends AuthGuard('jwt') {}
 
 ### 컨트롤러 users.controller.ts
 
-| 라우트                         | 함수                 | 입력                | 출력                  |
-| ------------------------------ | -------------------- | ------------------- | --------------------- |
-| `POST /api/users`              | `createUser(dto)`    | `CreateUserDto`     | `Promise<PublicUser>` |
-| `GET /api/users/search?email=` | `findByEmail(email)` | `string` (완전일치) | `Promise<PublicUser   | null>` |
+| 라우트                         | 함수                 | 입력                | 출력                          |
+| ------------------------------ | -------------------- | ------------------- | ----------------------------- |
+| `POST /api/users`              | `createUser(dto)`    | `CreateUserDto`     | `Promise<PublicUser>`         |
+| `GET /api/users/search?email=` | `findByEmail(email)` | `string` (완전일치) | `Promise<PublicUser \| null>` |
 
 ### 서비스 users.service.ts
 
@@ -239,16 +239,16 @@ findEndpointDetail(userId: number, endpointId: number): Promise<EndpointDetail>
 
 ### 컨트롤러 comments.controller.ts
 
-| 라우트                                   | 함수                                   | 입력                                      | 출력                     |
-| ---------------------------------------- | -------------------------------------- | ----------------------------------------- | ------------------------ |
-| `GET /api/endpoints/:id/comments`        | `findComments(user, endpointId)`       | `AuthUser`, `number`                      | `Promise<CommentTree[]>` |
-| `POST /api/endpoints/:id/comments`       | `createComment(user, endpointId, dto)` | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`       |
-| `POST /api/comments/:id/replies`         | `createReply(user, parentId, dto)`     | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`       |
-| `PATCH /api/comments/:id`                | `updateComment(user, id, dto)`         | `AuthUser`, `number`, `UpdateCommentDto`  | `Promise<Comment>`       |
-| `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`          | `AuthUser`, `number`                      | `Promise<Comment>`       |
-| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(user, id, dto)`            | `AuthUser`, `number`, `MoveCommentDto`    | `Promise<void>`          |
-| `POST /api/comments/:id/reactions`       | `toggleReaction(user, id, dto)`        | `AuthUser`, `number`, `CreateReactionDto` | `Promise<Reaction        | null>` |
-| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`    | `AuthUser`, `number`                      | `Promise<Comment>`       |
+| 라우트                                   | 함수                                   | 입력                                      | 출력                        |
+| ---------------------------------------- | -------------------------------------- | ----------------------------------------- | --------------------------- |
+| `GET /api/endpoints/:id/comments`        | `findComments(user, endpointId)`       | `AuthUser`, `number`                      | `Promise<CommentTree[]>`    |
+| `POST /api/endpoints/:id/comments`       | `createComment(user, endpointId, dto)` | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `POST /api/comments/:id/replies`         | `createReply(user, parentId, dto)`     | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `PATCH /api/comments/:id`                | `updateComment(user, id, dto)`         | `AuthUser`, `number`, `UpdateCommentDto`  | `Promise<Comment>`          |
+| `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`          | `AuthUser`, `number`                      | `Promise<Comment>`          |
+| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(user, id, dto)`            | `AuthUser`, `number`, `MoveCommentDto`    | `Promise<void>`             |
+| `POST /api/comments/:id/reactions`       | `toggleReaction(user, id, dto)`        | `AuthUser`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
+| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`    | `AuthUser`, `number`                      | `Promise<Comment>`          |
 
 ### 서비스 comments.service.ts
 
