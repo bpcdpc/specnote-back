@@ -1,9 +1,10 @@
 # 백엔드 기능 정의서 v0.2
 
-| 버전 | 일시 | 변경 내용 |
-| --- | --- | --- |
+| 버전 | 일시                 | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | v0.1 | 2026.07.08 WED 09:08 | 컨트롤러 포함 상세본. 스펙 커밋 구조 확정 반영(applySpecCommit 공용 tx 헬퍼, createProject·commitSpec가 각자 트랜잭션 열고 호출, updateProject는 tryItBaseUrl만·커밋 없음, 스펙 URL 저장·refetch는 POST /spec-commits, 프로젝트 메타는 extractSpecInfo 유틸+라우트 인라인 write) + 엔드포인트 목록 경량화(findEndpoints·ProjectView.endpoints를 EndpointSummary[]로, operationJson은 상세에서만) |
-| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추 |
+| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추가                                                                                                                                                                                                                                                                                                                                                                |
+| v0.3 | 2026.07.13 MON 11:02 | 멤버 API 시그니처 축소(removeMember·findMembers에서 미사용 인자 제거 — 인가는 MembershipGuard가 처리), CommentView·NotificationView 시간 필드 Date → string(응답 직렬화 기준), SummaryInput은 서버 내부 타입이므로 Date 유지                                                                                                                                                                     |
 
 ---
 
@@ -47,8 +48,8 @@ type PublicUser = { id: number; userName: string; email: string };
 
 ### 컨트롤러 auth.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
+| 라우트                 | 함수         | 입력       | 출력                                |
+| ---------------------- | ------------ | ---------- | ----------------------------------- |
 | `POST /api/auth/login` | `login(dto)` | `LoginDto` | `Promise<{ access_token: string }>` |
 
 ### 서비스 auth.service.ts
@@ -70,7 +71,7 @@ validate(payload: JwtPayload): { id: number; email: string }
 ### guards/jwt-auth.guard.ts
 
 ```tsx
-class JwtAuthGuard extends AuthGuard("jwt") {}
+class JwtAuthGuard extends AuthGuard('jwt') {}
 // 인증(로그인)만 처리 → auth 소유
 ```
 
@@ -83,10 +84,10 @@ class JwtAuthGuard extends AuthGuard("jwt") {}
 
 ### 컨트롤러 users.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
-| `POST /api/users` | `createUser(dto)` | `CreateUserDto` | `Promise<PublicUser>` |
-| `GET /api/users/search?email=` | `findByEmail(email)` | `string` (완전일치) | `Promise<PublicUser | null>` |
+| 라우트                         | 함수                 | 입력                | 출력                  |
+| ------------------------------ | -------------------- | ------------------- | --------------------- |
+| `POST /api/users`              | `createUser(dto)`    | `CreateUserDto`     | `Promise<PublicUser>` |
+| `GET /api/users/search?email=` | `findByEmail(email)` | `string` (완전일치) | `Promise<PublicUser   | null>` |
 
 ### 서비스 users.service.ts
 
@@ -108,17 +109,17 @@ findById(id: number): Promise<User | null>
 
 ### 컨트롤러 projects.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
-| `POST /api/projects` | `createProject(user, dto)` | `AuthUser`, `CreateProjectDto` | `Promise<ProjectView>` |
-| `GET /api/projects` | `findMyProjects(user)` | `AuthUser` | `Promise<ProjectSummary[]>` |
-| `GET /api/projects/:id` | `findProject(user, id)` | `AuthUser`, `number` | `Promise<ProjectView>` |
-| `PATCH /api/projects/:id` `[Owner]` | `updateProject(user, id, dto)` | `AuthUser`, `number`, `UpdateProjectDto` | `Promise<ProjectSummary>` |
-| `DELETE /api/projects/:id` `[Owner]` | `softDeleteProject(user, id)` | `AuthUser`, `number` | `Promise<void>` |
-| `POST /api/projects/:id/spec-commits` `[Owner]` | `commitSpec(user, id, dto)` | `AuthUser`, `number`, `CommitSpecDto` | `Promise<SpecCommitResult>` |
-| `POST /api/projects/:id/members` `[Owner]` | `inviteMember(user, id, dto)` | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>` |
-| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(user, id, userId)` | `AuthUser`, `number`, `number` | `Promise<Membership>` |
-| `GET /api/projects/:id/members` | `findMembers(user, id)` | `AuthUser`, `number` | `Promise<Membership[]>` |
+| 라우트                                               | 함수                           | 입력                                        | 출력                        |
+| ---------------------------------------------------- | ------------------------------ | ------------------------------------------- | --------------------------- |
+| `POST /api/projects`                                 | `createProject(user, dto)`     | `AuthUser`, `CreateProjectDto`              | `Promise<ProjectView>`      |
+| `GET /api/projects`                                  | `findMyProjects(user)`         | `AuthUser`                                  | `Promise<ProjectSummary[]>` |
+| `GET /api/projects/:id`                              | `findProject(user, id)`        | `AuthUser`, `number`                        | `Promise<ProjectView>`      |
+| `PATCH /api/projects/:id` `[Owner]`                  | `updateProject(user, id, dto)` | `AuthUser`, `number`, `UpdateProjectDto`    | `Promise<ProjectSummary>`   |
+| `DELETE /api/projects/:id` `[Owner]`                 | `softDeleteProject(user, id)`  | `AuthUser`, `number`                        | `Promise<void>`             |
+| `POST /api/projects/:id/spec-commits` `[Owner]`      | `commitSpec(user, id, dto)`    | `AuthUser`, `number`, `CommitSpecDto`       | `Promise<SpecCommitResult>` |
+| `POST /api/projects/:id/members` `[Owner]`           | `inviteMember(user, id, dto)`  | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>`       |
+| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(id, userId)`     | `number`, `number`                          | `Promise<Membership>`       |
+| `GET /api/projects/:id/members`                      | `findMembers(id)`              | `number`                                    | `Promise<Membership[]>`     |
 
 ### 서비스 projects.service.ts
 
@@ -185,11 +186,11 @@ inviteMember(ownerId: number, projectId: number, dto: CreateMembershipDto): Prom
 // 반환값에 쓰인 Membership type 은 프리즈마에서 정의된 모델을 그대로 써도된다.
 // 아래 메소드 들도 마찬가지.
 
-removeMember(ownerId: number, projectId: number, targetUserId: number): Promise<Membership>
+removeMember(projectId: number, targetUserId: number): Promise<Membership>
 // isDeleted = true
 // [OWNER] 권한
 
-findMembers(userId: number, projectId: number): Promise<Membership[]>
+findMembers(projectId: number): Promise<Membership[]>
 // 프로젝트에 포함된 멤버 검색 (댓글에서 멤버멘션 걸 때 등)
 
 getMembership(userId: number, projectId: number): Promise<Membership | null>  // 가드가 이 메소드를 호출해, 그 반환값으로 접근 권한을 검증
@@ -220,8 +221,8 @@ extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 
 ### 컨트롤러 endpoints.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
+| 라우트                   | 함수                           | 입력                 | 출력                      |
+| ------------------------ | ------------------------------ | -------------------- | ------------------------- |
 | `GET /api/endpoints/:id` | `findEndpointDetail(user, id)` | `AuthUser`, `number` | `Promise<EndpointDetail>` |
 
 ### 서비스 endpoints.service.ts
@@ -238,16 +239,16 @@ findEndpointDetail(userId: number, endpointId: number): Promise<EndpointDetail>
 
 ### 컨트롤러 comments.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
-| `GET /api/endpoints/:id/comments` | `findComments(user, endpointId)` | `AuthUser`, `number` | `Promise<CommentTree[]>` |
-| `POST /api/endpoints/:id/comments` | `createComment(user, endpointId, dto)` | `AuthUser`, `number`, `CreateCommentDto` | `Promise<Comment>` |
-| `POST /api/comments/:id/replies` | `createReply(user, parentId, dto)` | `AuthUser`, `number`, `CreateCommentDto` | `Promise<Comment>` |
-| `PATCH /api/comments/:id` | `updateComment(user, id, dto)` | `AuthUser`, `number`, `UpdateCommentDto` | `Promise<Comment>` |
-| `DELETE /api/comments/:id` | `softDeleteComment(user, id)` | `AuthUser`, `number` | `Promise<Comment>` |
-| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(user, id, dto)` | `AuthUser`, `number`, `MoveCommentDto` | `Promise<void>` |
-| `POST /api/comments/:id/reactions` | `toggleReaction(user, id, dto)` | `AuthUser`, `number`, `CreateReactionDto` | `Promise<Reaction | null>` |
-| `POST /api/endpoints/:id/ai-summary` | `summarizeThread(user, endpointId)` | `AuthUser`, `number` | `Promise<Comment>` |
+| 라우트                                   | 함수                                   | 입력                                      | 출력                     |
+| ---------------------------------------- | -------------------------------------- | ----------------------------------------- | ------------------------ |
+| `GET /api/endpoints/:id/comments`        | `findComments(user, endpointId)`       | `AuthUser`, `number`                      | `Promise<CommentTree[]>` |
+| `POST /api/endpoints/:id/comments`       | `createComment(user, endpointId, dto)` | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`       |
+| `POST /api/comments/:id/replies`         | `createReply(user, parentId, dto)`     | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`       |
+| `PATCH /api/comments/:id`                | `updateComment(user, id, dto)`         | `AuthUser`, `number`, `UpdateCommentDto`  | `Promise<Comment>`       |
+| `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`          | `AuthUser`, `number`                      | `Promise<Comment>`       |
+| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(user, id, dto)`            | `AuthUser`, `number`, `MoveCommentDto`    | `Promise<void>`          |
+| `POST /api/comments/:id/reactions`       | `toggleReaction(user, id, dto)`        | `AuthUser`, `number`, `CreateReactionDto` | `Promise<Reaction        | null>` |
+| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`    | `AuthUser`, `number`                      | `Promise<Comment>`       |
 
 ### 서비스 comments.service.ts
 
@@ -343,10 +344,10 @@ generateSummary(thread: SummaryInput[]): Promise<string>
 
 ### 컨트롤러 notifications.controller.ts
 
-| 라우트 | 함수 | 입력 | 출력 |
-| --- | --- | --- | --- |
-| `GET /api/notifications` | `findNotifications(user)` | `AuthUser` | `Promise<NotificationView[]>` |
-| `PATCH /api/notifications/:id/read` | `markAsRead(user, id)` | `AuthUser`, `number` | `Promise<Notification>` |
+| 라우트                              | 함수                      | 입력                 | 출력                          |
+| ----------------------------------- | ------------------------- | -------------------- | ----------------------------- |
+| `GET /api/notifications`            | `findNotifications(user)` | `AuthUser`           | `Promise<NotificationView[]>` |
+| `PATCH /api/notifications/:id/read` | `markAsRead(user, id)`    | `AuthUser`, `number` | `Promise<Notification>`       |
 
 ### 서비스 notifications.service.ts
 
@@ -419,14 +420,34 @@ type SpecResult =
 type SpecInfo = { title: string; description?: string; version: string };
 // oasVersion은 loadSpec의 oas가 담당
 
-type ExtractedEndpoint = { path: string; method: string; operationId?: string; summary?: string; tags: string[]; operationJson: Prisma.InputJsonValue };
+type ExtractedEndpoint = {
+  path: string;
+  method: string;
+  operationId?: string;
+  summary?: string;
+  tags: string[];
+  operationJson: Prisma.InputJsonValue;
+};
 
-type EndpointDiff = { added: number; removed: number; updated: number; revived: number };
+type EndpointDiff = {
+  added: number;
+  removed: number;
+  updated: number;
+  revived: number;
+};
 // 커밋 diff (일회성 반영, 저장 안 함) — 항목별 카운트만
 
 type SpecCommitResult = { snapshotId: number; diff: EndpointDiff };
 
-type ProjectSummary = { id: number; title: string; description: string | null; version: string; oasVersion: string; role: ROLE; isDeleted: boolean };
+type ProjectSummary = {
+  id: number;
+  title: string;
+  description: string | null;
+  version: string;
+  oasVersion: string;
+  role: ROLE;
+  isDeleted: boolean;
+};
 
 // 프로젝트 진입 응답
 type ProjectView = {
@@ -445,7 +466,14 @@ type ProjectView = {
 // };
 
 // 사이드바 목록용 경량(operationJson 제외)
-type EndpointSummary = { id: number; path: string; method: string; summary: string | null; tags: string[]; isDeleted: boolean };
+type EndpointSummary = {
+  id: number;
+  path: string;
+  method: string;
+  summary: string | null;
+  tags: string[];
+  isDeleted: boolean;
+};
 
 // 상세 응답: 실제 사용하는 필드만 명시
 // 내부 필드 projectId 등 제외.
@@ -457,9 +485,9 @@ type EndpointDetail = {
   operationId: string | null;
   summary: string | null;
   tags: string[];
-  operationJson: unknown;   // operation JSON. 서버는 전달만 하고, 프론트가 파싱
+  operationJson: unknown; // operation JSON. 서버는 전달만 하고, 프론트가 파싱
   isDeleted: boolean;
-  snapshotId: number;   // 정합성 비교용 최신 스냅샷 id
+  snapshotId: number; // 정합성 비교용 최신 스냅샷 id
 };
 
 // Prisma에서 정의한 원형 Comment 모델
@@ -481,28 +509,33 @@ type ReplyParent = { parentId: number; endpointId: number };
 // };
 
 // 리액션 정보 넘겨주는 타입
-type ReactionSummary = { type: REACTION_TYPE; count: number; reactedByMe: boolean };
+type ReactionSummary = {
+  type: REACTION_TYPE;
+  count: number;
+  reactedByMe: boolean;
+};
 
 // 조회 뷰 타입(findComments). write 계열은 Comment(Prisma 원형) 반환
 type CommentView = {
   id: number;
   endpointId: number | null;
   parentId: number | null;
-  content: string;          // 삭제 시 서버에서 마스킹 : "삭제된 내용입니다."
+  content: string; // 삭제 시 서버에서 마스킹 : "삭제된 내용입니다."
   isDeleted: boolean;
   author: PublicUser;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string; // 프론트에 내려줄 값이라 string으로 처리합니다.
+  updatedAt: string; // 프론트에 내려줄 값이라 string으로 처리합니다.
   reactions: ReactionSummary[];
   memberMentions: { userId: number; userName: string }[];
   endpointMentions: { endpointId: number; path: string; method: string }[];
 };
 
 // 댓글 + 대댓글 한 세트 (2뎁스 고정)
-type CommentTree = CommentView & { replies: CommentView[] };   
+type CommentTree = CommentView & { replies: CommentView[] };
 
 // AI가 요약해야 하는 대상을 모을 때 쓰는 타입.
 // 아래 타입을 배열로 만들어서 넘기면 됩니다.
+// 서버 내부 타입 (HTTP 응답 아님). generateSummary() 입력용이므로 createAt 의 타입을 Date로 유지.
 type SummaryInput = { author: string; content: string; createdAt: Date };
 
 // 알림 조회 뷰: 프론트에서 클릭 시 해당 댓글로 이동/하일라이트 될 때 쓸 파생필드 포함
@@ -510,11 +543,11 @@ type NotificationView = {
   id: number;
   type: NOTIFICATION_TYPE;
   isRead: boolean;
-  createdAt: Date;
-  invitedProjectId: number | null;   // INVITED
+  createdAt: string; // 프론트에 내려줄 값이므로 문자열로 줘야 합니다.
+  invitedProjectId: number | null; // INVITED
   mentionedCommentId: number | null; // MENTIONED
-  projectId: number | null;          // MENTIONED: mentionedCommentId 조인 파생
-  endpointId: number | null;         // MENTIONED: mentionedCommentId 조인 파생
+  projectId: number | null; // MENTIONED: mentionedCommentId 조인 파생
+  endpointId: number | null; // MENTIONED: mentionedCommentId 조인 파생
 };
 
 type ProjectScopeResource = 'endpoint' | 'comment';
