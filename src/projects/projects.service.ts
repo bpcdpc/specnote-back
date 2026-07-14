@@ -60,8 +60,27 @@ export class ProjectsService {
 
   // GET /projects — 내가 멤버인 프로젝트 목록
   async findMyProjects(userId: number): Promise<ProjectSummary[]> {
-    // TODO: membership(isDeleted=false) 로 내 프로젝트만 조회 → role 포함해 ProjectSummary[] 매핑
-    throw new Error('not implemented');
+    // membership(isDeleted=false) 로 내 프로젝트만 조회 → role 포함해 ProjectSummary[] 매핑
+    const memberships = await this.prisma.membership.findMany({
+      where:{
+        userId,
+        isDeleted: false,
+        project:  { isDeleted: false}
+      },
+      include: {
+        project: true, 
+      },
+    });
+
+    return memberships.map((membership)=>({
+      id: membership.project.id,
+      title: membership.project.title,
+      description: membership.project.description,
+      version: membership.project.version,
+      oasVersion: membership.project.oasVersion,
+      role: membership.role,
+      isDeleted: membership.project.isDeleted,
+    }))
   }
 
   // GET /projects/:id — 프로젝트 진입
@@ -125,14 +144,68 @@ export class ProjectsService {
     projectId: number,
     dto: UpdateProjectDto,
   ): Promise<ProjectSummary> {
-    // TODO: tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
-    throw new Error('not implemented');
+    // tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
+    // 프로젝트 조회  
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        memberships: {
+          where: { id: userId}
+        }
+      }
+    });
+    // 프로젝트 체크 
+    if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
+    if (project.isDeleted) throw new NotFoundException('삭제된 프로젝트 입니다.');
+
+    // // 프로젝트 onwer 맴버십 체크 
+    // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
+    // if (project.memberships[0].role !== ROLE.OWNER) throw new NotFoundException('맴버십 OWNER가 아닙니다.');
+
+    // tryItBaseUrl update 
+    const ps = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { tryItBaseUrl: dto.tryItBaseUrl }
+    });
+
+    return {
+      id: ps.id,
+      title: ps.title,
+      description: ps.description,
+      version: ps.version,
+      oasVersion: ps.oasVersion,
+      role: project.memberships[0].role,
+      isDeleted: ps.isDeleted
+    }
+
   }
 
   // DELETE /projects/:id — 소프트 삭제
   async softDeleteProject(userId: number, projectId: number): Promise<void> {
-    // TODO: isDeleted = true
-    throw new Error('not implemented');
+    // 프로젝트 조회  
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        memberships: {
+          where: { id: userId}
+        }
+      }
+    });
+    // 프로젝트 체크 
+    if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
+    if (project.isDeleted) throw new NotFoundException('이미 삭제된 프로젝트 입니다.');
+
+    // // 프로젝트 onwer 맴버십 체크 
+    // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
+    // if (project.memberships[0].role !== ROLE.OWNER) throw new NotFoundException('맴버십 OWNER가 아닙니다.');
+
+    // isDeleted = true
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { isDeleted: true}
+    });
+
+    //todo: shk-20260714 리턴값 없이 진행?
   }
 
   // POST /projects/:id/spec-commits — 스펙 업데이트
