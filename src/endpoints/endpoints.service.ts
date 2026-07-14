@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { EndpointDetail } from './endpoints.type';
@@ -22,6 +22,23 @@ export class EndpointsService {
     //    * 멤버십 검증은 가드(@ProjectScope('endpoint'))가 이미 수행
     // 2. projectsService.getLatestSnapshotVersion(projectId) 로 최신 snapshotId
     // 3. EndpointDetail 로 매핑 (operationJson 은 그대로 pass-through)
-    throw new Error('not implemented');
+    const endpoint = await this.prisma.endpoint.findUnique({
+      where:{id:endpointId},
+    })
+    if(!endpoint) throw new NotFoundException('엔드포인트 찾을 수 없음');
+    const snapshotId = await this.projectsService.getLatestSnapshotVersion(
+      endpoint.projectId);
+    return {
+      id: endpoint.id,
+      path: endpoint.path,
+      method: endpoint.method,
+      operationId: endpoint.operationId,
+      summary: endpoint.summary,
+      tags:endpoint.tags,
+      operationJson: endpoint.operationJson,
+      isDeleted: endpoint.isDeleted,
+      snapshotId,
+
+    };
   }
 }
