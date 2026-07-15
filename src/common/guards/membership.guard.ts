@@ -95,17 +95,20 @@ export class MembershipGuard implements CanActivate {
     }
   }
 
-  // 2) 멤버십 확인 (없거나 소프트 삭제면 거부).
-  //    명세 0-8: 비멤버에게는 403 이 아니라 404 — 리소스 존재 자체를 은닉
-  //    (id 가 순차 정수라 403 을 주면 "존재하지만 권한 없음"이 노출됨)
+  // 2) 멤버십 확인 (없거나 소프트 삭제, 또는 프로젝트 자체가 삭제되면 거부).
+  //    명세 0-8: 세 경우 모두 404 로 뭉갬 — 리소스 존재 자체를 은닉
+  //    (프로젝트 없음 / 비멤버 / 프로젝트 삭제됨을 구별 불가하게)
   private async checkMembership(
     projectId: number,
     userId: number,
   ): Promise<Membership> {
     const membership = await this.prisma.membership.findUnique({
       where: { projectId_userId: { projectId, userId } },
+      include: {
+        project: { select: { isDeleted: true } },
+      },
     });
-    if (!membership || membership.isDeleted) {
+    if (!membership || membership.isDeleted || membership.project.isDeleted) {
       throw new NotFoundException('멤버쉽이 존재하지 않거나 제거되었습니다.');
     }
     return membership;
