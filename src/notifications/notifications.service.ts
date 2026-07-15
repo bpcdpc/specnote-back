@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Notification } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
@@ -67,11 +67,11 @@ export class NotificationsService {
     });
 
     if (!notification) {
-      throw new Error('Notification not found');
+      throw new NotFoundException('알림이 존재하지 않습니다.');
     }
 
     if (notification.recipientId !== userId) {
-      throw new Error('Unauthorized');
+      throw new NotFoundException('알림이 존재하지 않습니다.');
     }
 
     const updatedNotification = await this.prisma.notification.update({

@@ -24,17 +24,12 @@ export class MembershipsService {
       where: { email: dto.email },
     });
     if (!user) {
-      throw new NotFoundException('사용자 이메일 없음');
+      throw new NotFoundException('사용자 이메일이 없습니다.');
     }
 
-    const membershipCheck = await this.prisma.membership.findUnique({
-      where: {
-        projectId_userId: {
-          projectId: projectId,
-          userId: user.id,
-        },
-      },
-    });
+    //멥버십 체크 
+    const membershipCheck = await this.getMembership(user.id, projectId);
+
     if(membershipCheck && membershipCheck.isDeleted === false){
       throw new ConflictException('이미 멤버로 존재합니다.');
     }
@@ -74,10 +69,17 @@ export class MembershipsService {
     targetUserId: number,
   ): Promise<Membership> {
     // isDeleted = true → 갱신된 Membership 반환
-    const membershipCheck=await this.getMembership(targetUserId, projectId);
-    if(membershipCheck && membershipCheck.isDeleted){
+    const membershipCheck = await this.getMembership(targetUserId, projectId);
+    if(!membershipCheck) {
+      throw new NotFoundException('존재하지 않는 멤버입니다.');
+    }
+    if(membershipCheck.isDeleted){
       throw new ConflictException('비활성된 멤버입니다.');
     }
+    if(membershipCheck.role === ROLE.OWNER) {
+      throw new ConflictException('OWNER 멤버는 삭제 불가 합니다.');
+    }
+
     const membership = await this.prisma.membership.update({
       where: {
         projectId_userId: {
@@ -117,7 +119,7 @@ export class MembershipsService {
         },
       },
     });
-    if (!membership) throw new NotFoundException('프로젝트 사용자 없음');
+    if (!membership) return null;
     return membership;
   }
 }

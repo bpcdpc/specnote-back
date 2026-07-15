@@ -181,8 +181,8 @@ export class ProjectsService {
       orderBy: { id: 'desc' },
       select: { id: true },
     });
-    if (!snapshot) throw new NotFoundException('프로젝트 스냅샷 없음');
-    return snapshot?.id ?? 0;
+    if (!snapshot) throw new NotFoundException('프로젝트 스냅샷이 없습니다.');
+    return snapshot.id;
   }
 
   // ── 공유 tx 헬퍼 (createProject / commitSpec 공용, 트랜잭션 열지 않음) ──
