@@ -37,7 +37,7 @@ export class MembershipGuard implements CanActivate {
     const user: AuthUser | undefined = req.user;
     if (!user) {
       // JwtAuthGuard 가 앞에 없거나 통과 못 한 경우
-      throw new UnauthorizedException('인증 필요');
+      throw new UnauthorizedException('인증이 필요합니다.');
     }
 
     const projectId = await this.resolveProjectId(context, req);
@@ -45,7 +45,8 @@ export class MembershipGuard implements CanActivate {
     this.checkRole(context, membership);
 
     // 다른 로직에서 재사용 가능하도록 실어둠(선택적 사용)
-    req.membership = membership;
+    // req.membership = membership;
+    req.projectId = projectId;
     return true;
   }
 
@@ -56,7 +57,7 @@ export class MembershipGuard implements CanActivate {
   ): Promise<number> {
     const id = Number(req.params?.id);
     if (!Number.isInteger(id) || id <= 0) {
-      throw new BadRequestException('유효하지 않은 id');
+      throw new BadRequestException('유효하지 않은 id입니다.');
     }
 
     const source = this.reflector.getAllAndOverride<
@@ -75,7 +76,7 @@ export class MembershipGuard implements CanActivate {
           where: { id },
           select: { projectId: true },
         });
-        if (!row) throw new NotFoundException('찾을 수 없음');
+        if (!row) throw new NotFoundException('엔드포인트를 찾을 수 없습니다.');
         return row.projectId;
       }
       case 'comment': {
@@ -83,7 +84,7 @@ export class MembershipGuard implements CanActivate {
           where: { id },
           select: { projectId: true },
         });
-        if (!row) throw new NotFoundException('찾을 수 없음');
+        if (!row) throw new NotFoundException('댓글을 찾을 수 없습니다.');
         return row.projectId;
       }
       default: {
@@ -105,7 +106,7 @@ export class MembershipGuard implements CanActivate {
       where: { projectId_userId: { projectId, userId } },
     });
     if (!membership || membership.isDeleted) {
-      throw new NotFoundException('찾을 수 없음');
+      throw new NotFoundException('멤버쉽이 존재하지 않거나 제거되었습니다.');
     }
     return membership;
   }
@@ -119,7 +120,7 @@ export class MembershipGuard implements CanActivate {
     );
     if (!required) return;
     if (membership.role !== required) {
-      throw new ForbiddenException(`${required} 권한 필요`);
+      throw new ForbiddenException(`${required} 권한이 필요합니다.`);
     }
   }
 }

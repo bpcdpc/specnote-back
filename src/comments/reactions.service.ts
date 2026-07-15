@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateReactionDto } from './dto/create-reaction.dto';
@@ -8,42 +8,23 @@ export class ReactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // POST /comments/:id/reactions — 토글
+  // projectId 는 @CurrentProjectId 주입값 (가드가 comment 스코프를 통해 projectId 역참조해둠)
+  // comment 자체가 존재하는지, 멤버십이 맞는지는 가드가 이미 검증했으므로, 여기서 다시 조회하지 않음.
   async toggleReaction(
     userId: number,
     commentId: number,
+    projectId: number,
     dto: CreateReactionDto,
   ): Promise<Reaction | null> {
-    // TODO: (commentId, userId, type) 존재 시 delete 후 null, 없으면 create 후 반환
-    const comment = await this.prisma.comment.findUnique({
-      where:{
-        id: commentId,
-      },
-      select:{projectId:true},
-    });
-    if(!comment){
-      throw new NotFoundException('댓글을 찾을 수 없습니다.');
-    }
     const existing = await this.prisma.reaction.findFirst({
-      where :{
-        commentId,
-        userId,
-        type:dto.type,
-      },
+      where: { commentId, userId, type: dto.type },
     });
-    if(existing){
-      await this.prisma.reaction.delete({
-        where:{id:existing.id},
-      });
+    if (existing) {
+      await this.prisma.reaction.delete({ where: { id: existing.id } });
       return null;
     }
-    const reaction = await this.prisma.reaction.create({
-      data:{
-        commentId,
-        userId,
-        type:dto.type,
-        projectId:comment.projectId,
-      },
+    return this.prisma.reaction.create({
+      data: { commentId, userId, type: dto.type, projectId },
     });
-    return reaction;
   }
 }

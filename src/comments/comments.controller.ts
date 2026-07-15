@@ -24,6 +24,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
+import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
 // 각 메서드에서 전체 경로를 지정한다. (endpoints/:id/... 와 comments/:id/... 혼재)
@@ -60,9 +61,15 @@ export class CommentsController {
   createComment(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) endpointId: number,
+    @CurrentProjectId() projectId: number,
     @Body() dto: CreateCommentDto,
   ) {
-    return this.commentsService.createComment(user.id, endpointId, dto);
+    return this.commentsService.createComment(
+      user.id,
+      endpointId,
+      projectId,
+      dto,
+    );
   }
 
   @ApiOperation({ summary: '스레드 AI 요약' })
@@ -83,9 +90,10 @@ export class CommentsController {
   createReply(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) parentId: number,
+    @CurrentProjectId() projectId: number,
     @Body() dto: CreateCommentDto,
   ) {
-    return this.commentsService.createReply(user.id, parentId, dto);
+    return this.commentsService.createReply(user.id, parentId, projectId, dto);
   }
 
   @ApiOperation({ summary: '댓글 수정 (작성자 본인)' })
@@ -114,11 +122,10 @@ export class CommentsController {
   @ProjectRole(ROLE.OWNER)
   @Patch('comments/:id/move')
   moveThread(
-    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: MoveCommentDto,
   ) {
-    return this.commentsService.moveThread(user.id, id, dto);
+    return this.commentsService.moveThread(id, dto);
   }
 
   @ApiOperation({ summary: '리액션 토글' })
@@ -127,8 +134,9 @@ export class CommentsController {
   toggleReaction(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
+    @CurrentProjectId() projectId: number,
     @Body() dto: CreateReactionDto,
   ) {
-    return this.reactionsService.toggleReaction(user.id, id, dto);
+    return this.reactionsService.toggleReaction(user.id, id, projectId, dto);
   }
 }

@@ -1,10 +1,11 @@
 # 백엔드 기능 정의서 v0.2
 
-| 버전 | 일시                 | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                        |
-| ---- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| v0.1 | 2026.07.08 WED 09:08 | 컨트롤러 포함 상세본. 스펙 커밋 구조 확정 반영(applySpecCommit 공용 tx 헬퍼, createProject·commitSpec가 각자 트랜잭션 열고 호출, updateProject는 tryItBaseUrl만·커밋 없음, 스펙 URL 저장·refetch는 POST /spec-commits, 프로젝트 메타는 extractSpecInfo 유틸+라우트 인라인 write) + 엔드포인트 목록 경량화(findEndpoints·ProjectView.endpoints를 EndpointSummary[]로, operationJson은 상세에서만) |
-| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추가                                                                                                                                                                                                                                                                                                                                                                |
-| v0.3 | 2026.07.13 MON 11:02 | 멤버 API 시그니처 축소(removeMember·findMembers에서 미사용 인자 제거 — 인가는 MembershipGuard가 처리), CommentView·NotificationView 시간 필드 Date → string(응답 직렬화 기준), SummaryInput은 서버 내부 타입이므로 Date 유지                                                                                                                                                                     |
+| 버전 | 일시                 | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1 | 2026.07.08 WED 09:08 | 컨트롤러 포함 상세본. 스펙 커밋 구조 확정 반영(applySpecCommit 공용 tx 헬퍼, createProject·commitSpec가 각자 트랜잭션 열고 호출, updateProject는 tryItBaseUrl만·커밋 없음, 스펙 URL 저장·refetch는 POST /spec-commits, 프로젝트 메타는 extractSpecInfo 유틸+라우트 인라인 write) + 엔드포인트 목록 경량화(findEndpoints·ProjectView.endpoints를 EndpointSummary[]로, operationJson은 상세에서만)                                                                                    |
+| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추가                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| v0.3 | 2026.07.13 MON 11:02 | 멤버 API 시그니처 축소(removeMember·findMembers에서 미사용 인자 제거 — 인가는 MembershipGuard가 처리), CommentView·NotificationView 시간 필드 Date → string(응답 직렬화 기준), SummaryInput은 서버 내부 타입이므로 Date 유지                                                                                                                                                                                                                                                        |
+| v0.4 | 2026.07.16 THU 00:05 | 가드가 역참조한 projectId를 서비스가 재사용하도록 시그니처 정리. createComment·createReply·toggleReaction에 projectId 인자 추가(@CurrentProjectId 주입), findEndpointDetail·moveThread에서 미사용 userId/ownerId 제거(인가는 MembershipGuard 전담). @CurrentProjectId 커스텀 데코레이터 추가. moveThread 스레드 이동 실패 케이스 400 통일 반영(ForbiddenException → BadRequestException). updateProject·softDeleteProject 시그니처에서 미사용 userId 제거(코드 반영분 문서 동기화). |
 
 ---
 
@@ -109,17 +110,17 @@ findById(id: number): Promise<User | null>
 
 ### 컨트롤러 projects.controller.ts
 
-| 라우트                                               | 함수                           | 입력                                        | 출력                        |
-| ---------------------------------------------------- | ------------------------------ | ------------------------------------------- | --------------------------- |
-| `POST /api/projects`                                 | `createProject(user, dto)`     | `AuthUser`, `CreateProjectDto`              | `Promise<ProjectView>`      |
-| `GET /api/projects`                                  | `findMyProjects(user)`         | `AuthUser`                                  | `Promise<ProjectSummary[]>` |
-| `GET /api/projects/:id`                              | `findProject(user, id)`        | `AuthUser`, `number`                        | `Promise<ProjectView>`      |
-| `PATCH /api/projects/:id` `[Owner]`                  | `updateProject(user, id, dto)` | `AuthUser`, `number`, `UpdateProjectDto`    | `Promise<ProjectSummary>`   |
-| `DELETE /api/projects/:id` `[Owner]`                 | `softDeleteProject(user, id)`  | `AuthUser`, `number`                        | `Promise<void>`             |
-| `POST /api/projects/:id/spec-commits` `[Owner]`      | `commitSpec(user, id, dto)`    | `AuthUser`, `number`, `CommitSpecDto`       | `Promise<SpecCommitResult>` |
-| `POST /api/projects/:id/members` `[Owner]`           | `inviteMember(user, id, dto)`  | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>`       |
-| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(id, userId)`     | `number`, `number`                          | `Promise<Membership>`       |
-| `GET /api/projects/:id/members`                      | `findMembers(id)`              | `number`                                    | `Promise<Membership[]>`     |
+| 라우트                                               | 함수                          | 입력                                        | 출력                        |
+| ---------------------------------------------------- | ----------------------------- | ------------------------------------------- | --------------------------- |
+| `POST /api/projects`                                 | `createProject(user, dto)`    | `AuthUser`, `CreateProjectDto`              | `Promise<ProjectView>`      |
+| `GET /api/projects`                                  | `findMyProjects(user)`        | `AuthUser`                                  | `Promise<ProjectSummary[]>` |
+| `GET /api/projects/:id`                              | `findProject(user, id)`       | `AuthUser`, `number`                        | `Promise<ProjectView>`      |
+| `PATCH /api/projects/:id` `[Owner]`                  | `updateProject(id, dto)`      | `number`, `UpdateProjectDto`                | `Promise<ProjectSummary>`   |
+| `DELETE /api/projects/:id` `[Owner]`                 | `softDeleteProject(id)`       | `number`                                    | `Promise<void>`             |
+| `POST /api/projects/:id/spec-commits` `[Owner]`      | `commitSpec(user, id, dto)`   | `AuthUser`, `number`, `CommitSpecDto`       | `Promise<SpecCommitResult>` |
+| `POST /api/projects/:id/members` `[Owner]`           | `inviteMember(user, id, dto)` | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>`       |
+| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(id, userId)`    | `number`, `number`                          | `Promise<Membership>`       |
+| `GET /api/projects/:id/members`                      | `findMembers(id)`             | `number`                                    | `Promise<Membership[]>`     |
 
 ### 서비스 projects.service.ts
 
@@ -156,10 +157,10 @@ findMyProjects(userId: number): Promise<ProjectSummary[]>
 findProject(userId: number, projectId: number): Promise<ProjectView>
 // 메타 + 엔드포인트 목록 전체 + 프론트엔드에서 캐시할 정보: components, snapshotId
 
-updateProject(userId: number, projectId: number, dto: UpdateProjectDto): Promise<ProjectSummary>
+updateProject(projectId: number, dto: UpdateProjectDto): Promise<ProjectSummary>
 // Owner만 권한을 가짐. tryItBaseUrl 수정할 때에 타는 라우트. 커밋 없음
 
-softDeleteProject(userId: number, projectId: number): Promise<void>
+softDeleteProject(projectId: number): Promise<void>
 // 소프트 딜리트 : isDeleted = true
 
 private applySpecCommit(tx: Prisma.TransactionClient, projectId: number, extracted: ExtractedEndpoint[], rawJson: Prisma.InputJsonValue): Promise<SpecCommitResult>
@@ -221,14 +222,14 @@ extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 
 ### 컨트롤러 endpoints.controller.ts
 
-| 라우트                   | 함수                           | 입력                 | 출력                      |
-| ------------------------ | ------------------------------ | -------------------- | ------------------------- |
-| `GET /api/endpoints/:id` | `findEndpointDetail(user, id)` | `AuthUser`, `number` | `Promise<EndpointDetail>` |
+| 라우트                   | 함수                     | 입력     | 출력                      |
+| ------------------------ | ------------------------ | -------- | ------------------------- |
+| `GET /api/endpoints/:id` | `findEndpointDetail(id)` | `number` | `Promise<EndpointDetail>` |
 
 ### 서비스 endpoints.service.ts
 
 ```tsx
-findEndpointDetail(userId: number, endpointId: number): Promise<EndpointDetail>
+findEndpointDetail(endpointId: number): Promise<EndpointDetail>
 // 정합성을 검사하기 위한 최신 snapshotId를 포함해야 함
 // snapshotId는 projects의 getLatestSnapshotVersion(projectsService 주입)으로 취득
 ```
@@ -239,26 +240,26 @@ findEndpointDetail(userId: number, endpointId: number): Promise<EndpointDetail>
 
 ### 컨트롤러 comments.controller.ts
 
-| 라우트                                   | 함수                                   | 입력                                      | 출력                        |
-| ---------------------------------------- | -------------------------------------- | ----------------------------------------- | --------------------------- |
-| `GET /api/endpoints/:id/comments`        | `findComments(user, endpointId)`       | `AuthUser`, `number`                      | `Promise<CommentTree[]>`    |
-| `POST /api/endpoints/:id/comments`       | `createComment(user, endpointId, dto)` | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
-| `POST /api/comments/:id/replies`         | `createReply(user, parentId, dto)`     | `AuthUser`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
-| `PATCH /api/comments/:id`                | `updateComment(user, id, dto)`         | `AuthUser`, `number`, `UpdateCommentDto`  | `Promise<Comment>`          |
-| `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`          | `AuthUser`, `number`                      | `Promise<Comment>`          |
-| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(user, id, dto)`            | `AuthUser`, `number`, `MoveCommentDto`    | `Promise<void>`             |
-| `POST /api/comments/:id/reactions`       | `toggleReaction(user, id, dto)`        | `AuthUser`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
-| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`    | `AuthUser`, `number`                      | `Promise<Comment>`          |
+| 라우트                                   | 함수                                              | 입력                                                | 출력                        |
+| ---------------------------------------- | ------------------------------------------------- | --------------------------------------------------- | --------------------------- |
+| `GET /api/endpoints/:id/comments`        | `findComments(user, endpointId)`                  | `AuthUser`, `number`                                | `Promise<CommentTree[]>`    |
+| `POST /api/endpoints/:id/comments`       | `createComment(user, endpointId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `POST /api/comments/:id/replies`         | `createReply(user, parentId, projectId, dto)`     | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `PATCH /api/comments/:id`                | `updateComment(user, id, dto)`                    | `AuthUser`, `number`, `UpdateCommentDto`            | `Promise<Comment>`          |
+| `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`                     | `AuthUser`, `number`                                | `Promise<Comment>`          |
+| `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(commentId, dto)`                      | `number`, `MoveCommentDto`                          | `Promise<void>`             |
+| `POST /api/comments/:id/reactions`       | `toggleReaction(user, commentId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
+| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`               | `AuthUser`, `number`                                | `Promise<Comment>`          |
 
 ### 서비스 comments.service.ts
 
 ```tsx
-createComment(userId, endpointId, dto: CreateCommentDto): Promise<Comment>
+createComment(userId, endpointId, projectId, dto: CreateCommentDto): Promise<Comment>
 // 1뎁스 커멘트 생성 : parentId = null
 // 멘션 기능은 1)syncMemberMentions, syncEndpointMentions에서 담당하며
 // 2)입력한 댓글 내용을 날릴 위험성 때문에 트랜잭션으로 묶지 않는다.
 
-createReply(userId, parentId, dto: CreateCommentDto): Promise<Comment>
+createReply(userId, parentId, projectId, dto: CreateCommentDto): Promise<Comment>
 // 2뎁스 커멘트 생성
 // normalizeReply() 먼저 실행하여, parentId를 뎁스에 맞게 정규화하며,
 // 해당 부모 commnet의 endpointId도 받아옴.
@@ -277,16 +278,18 @@ findComments(userId, endpointId): Promise<CommentTree[]>
 // 전체 댓글 목록 반환
 // 삭제된 댓글은 원문을 "삭제된 댓글입니다"등의 문구로 마스킹하여 프론트에다가 전달해 줌
 
-moveThread(ownerId, commentId, dto: MoveCommentDto): Promise<void>
+moveThread(commentId, dto: MoveCommentDto): Promise<void>
 // [Owner] 권한
-// [트랜잭션 밖 — 선검증]
-//  1. comment 조회 (projectId 확보)
-//  - parentId != null 이면 거부: 최상위 스레드만 이동 대상 (대댓글 단독 이동 불가)
-//  2. dto.targetEndpointId를 받아서 실제 targetEndpoint 조회
-//  - 없거나 isDeleted → BadRequestException
-//  - targetEndpoint.projectId !== comment.projectId → ForbiddenException (중요)
-// [트랜잭션]
-//   3. 최상위 + 대댓글 endpointId 를 targetEndpointId 로 일괄 갱신 (부분 갱신 방지)
+// [tx 밖 선검증]
+//  1. comment 조회 (parentId, projectId 확보 — select 로 함께 뽑음).
+//     parentId != null 이면 거부 (최상위만 이동 → 400)
+//  2. targetEndpoint 조회 — 아래 셋 모두 BadRequest(400) 로 통일
+//     - 없거나 isDeleted
+//     - projectId !== comment.projectId (다른 프로젝트 소속)
+//     세 경우를 400 하나로 뭉개는 이유: 400/404 로 구분하면
+//     endpointId 열거가 가능 → 리소스 은닉을 위해 400 통일
+// [tx]
+//  3. 최상위 + 대댓글 endpointId 를 targetEndpointId 로 일괄 갱신
 
 private assertAuthor(comment: Comment, userId: number): void
 // update, softDelete 공용
@@ -378,6 +381,8 @@ class MembershipGuard implements CanActivate {
   // projectId 확보 분기: (1) project 라우트는 :id가 곧 projectId (2) 그 외는 @ProjectScope(자원)로
   //   지정된 테이블에서 :id로 projectId 역참조 (3) 목록/생성 라우트는 가드 미적용
   // @ProjectRole(OWNER) 있으면 role 확인
+  // @ProjectRole(OWNER) 있으면 role 확인
+  // 확보한 projectId를 req.projectId에 실어 스코프 라우트 서비스가 재사용(@CurrentProjectId로 취득)
 }
 ```
 
@@ -386,6 +391,9 @@ class MembershipGuard implements CanActivate {
 ```tsx
 CurrentUser(): ParameterDecorator
 // req.user(AuthUser) 주입
+
+CurrentProjectId(): ParameterDecorator
+// req.projectId(number) 주입
 
 ProjectRole(role: ROLE): MethodDecorator
 // 라우트 요구 역할 메타데이터 (MembershipGuard가 Reflector로 읽어 role 검증)

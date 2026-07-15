@@ -28,33 +28,41 @@ export class CommentsService {
   }
 
   // POST /endpoints/:id/comments — 최상위 댓글
+  // projectId 는 @CurrentProjectId 주입값 (가드가 endpoint 테이블을 통해 projectId 역참조해둠).
+  // endpoint 를 다시 조회해 projectId 를 얻지 말 것 — 이미 데코레이터로 전달됨.
   async createComment(
     userId: number,
     endpointId: number,
+    projectId: number,
     dto: CreateCommentDto,
   ): Promise<Comment> {
     // TODO
     // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400)
-    //    - mentionedUserIds: 해당 프로젝트 멤버인지
-    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지
+    //    - mentionedUserIds: 해당 프로젝트 멤버인지 (projectId 사용)
+    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지 (projectId 사용)
     // 2. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
-    // 3. mentionsService.syncMemberMentions / syncEndpointMentions 호출
+    // 3. mentionsService.syncMemberMentions(commentId, projectId, ...) /
+    //    syncEndpointMentions(commentId, projectId, ...) 호출
     throw new Error('not implemented');
   }
 
   // POST /comments/:id/replies — 대댓글
+  // projectId 는 @CurrentProjectId 주입값 (가드가 comment 테이블을 통해 projectId 역참조해둠).
+  // 멘션 검증이 normalizeReply 보다 먼저라, parent 조회 결과가 아닌 주입값을 써야 함.
   async createReply(
     userId: number,
     parentId: number,
+    projectId: number,
     dto: CreateCommentDto,
   ): Promise<Comment> {
     // TODO
     // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400, createComment 와 동일)
-    //    - mentionedUserIds: 해당 프로젝트 멤버인지
-    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지
+    //    - mentionedUserIds: 해당 프로젝트 멤버인지 (projectId 사용)
+    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지 (projectId 사용)
     // 2. normalizeReply(parentId) → { parentId, endpointId } (2뎁스 고정 + endpointId 상속)
     // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
-    // 4. mentionsService.syncMemberMentions / syncEndpointMentions 호출
+    // 4. mentionsService.syncMemberMentions(commentId, projectId, ...) /
+    //    syncEndpointMentions(commentId, projectId, ...) 호출
     throw new Error('not implemented');
   }
 
@@ -75,14 +83,13 @@ export class CommentsService {
   }
 
   // PATCH /comments/:id/move — 스레드 이동 [Owner]
-  async moveThread(
-    ownerId: number,
-    commentId: number,
-    dto: MoveCommentDto,
-  ): Promise<void> {
+  // OWNER 검증은 가드(@ProjectRole(OWNER))가 이미 수행 → ownerId 인자 불필요.
+  // projectId 도 주입받지 않음 — 아래 comment 조회(parentId 판정용)에서 함께 확보한다.
+  async moveThread(commentId: number, dto: MoveCommentDto): Promise<void> {
     // TODO
     // [tx 밖 선검증]
-    //  1. comment 조회(projectId 확보). parentId != null 이면 거부 (최상위만 이동 → 400)
+    //  1. comment 조회 (parentId, projectId 확보 — select 로 함께 뽑음).
+    //     parentId != null 이면 거부 (최상위만 이동 → 400)
     //  2. targetEndpoint 조회 — 아래 셋 모두 BadRequest(400) 로 통일
     //     - 없거나 isDeleted
     //     - projectId !== comment.projectId (다른 프로젝트 소속)
