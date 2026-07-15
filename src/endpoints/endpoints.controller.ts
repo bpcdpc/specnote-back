@@ -9,8 +9,6 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipGuard } from '../common/guards/membership.guard';
 import { ProjectScope } from '../common/decorators/project-scope.decorator';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { type AuthUser } from '../common/types/auth.type';
 import { EndpointsService } from './endpoints.service';
 
 @ApiTags('endpoints')
@@ -25,10 +23,7 @@ export class EndpointsController {
   @ApiOperation({ summary: '엔드포인트 상세' })
   @ProjectScope('endpoint')
   @Get(':id')
-  findEndpointDetail(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.endpointsService.findEndpointDetail(user.id, id);
+  findEndpointDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.endpointsService.findEndpointDetail(id);
   }
 }
