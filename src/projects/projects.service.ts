@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ROLE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -45,7 +45,7 @@ export class ProjectsService {
           description: info.description ?? null,
           version: info.version,
           oasVersion: loaded.oas,
-          memberships: { create: { userId: ownerId, role: 'OWNER' } },
+          memberships: { create: { userId: ownerId, role: ROLE.OWNER } },
         },
         select: { id: true },
       });
@@ -60,8 +60,27 @@ export class ProjectsService {
 
   // GET /projects — 내가 멤버인 프로젝트 목록
   async findMyProjects(userId: number): Promise<ProjectSummary[]> {
-    // TODO: membership(isDeleted=false) 로 내 프로젝트만 조회 → role 포함해 ProjectSummary[] 매핑
-    throw new Error('not implemented');
+    // membership(isDeleted=false) 로 내 프로젝트만 조회 → role 포함해 ProjectSummary[] 매핑
+    const memberships = await this.prisma.membership.findMany({
+      where:{
+        userId,
+        isDeleted: false,
+        project:  { isDeleted: false}
+      },
+      include: {
+        project: true, 
+      },
+    });
+
+    return memberships.map((member)=>({
+      id: member.project.id,
+      title: member.project.title,
+      description: member.project.description,
+      version: member.project.version,
+      oasVersion: member.project.oasVersion,
+      role: member.role,
+      isDeleted: member.project.isDeleted,
+    }))
   }
 
   // GET /projects/:id — 프로젝트 진입
@@ -69,14 +88,14 @@ export class ProjectsService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    if (!project) throw new NotFoundException('프로젝트 없음');
+    if (!project) throw new NotFoundException('프로젝트가 없습니다.');
 
     // role 취득 (가드가 멤버십은 이미 검증했지만, 뷰에 role 이 필요)
     const membership = await this.prisma.membership.findUnique({
       where: { projectId_userId: { projectId, userId } },
       select: { role: true },
     });
-    if (!membership) throw new NotFoundException('프로젝트 없음');
+    if (!membership) throw new NotFoundException('프로젝트가 없습니다.');
 
     // 엔드포인트 경량 목록 (삭제 포함)
     const endpoints = await this.prisma.endpoint.findMany({
@@ -125,14 +144,49 @@ export class ProjectsService {
     projectId: number,
     dto: UpdateProjectDto,
   ): Promise<ProjectSummary> {
-    // TODO: tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
-    throw new Error('not implemented');
+    // tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
+    // 프로젝트 조회  
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId }
+    });
+    // 프로젝트 체크 
+    if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
+    if (project.isDeleted) throw new BadRequestException('삭제된 프로젝트 입니다.');
+
+    // tryItBaseUrl update 
+    const ps = await this.prisma.project.update({
+      where: { id: projectId },
+      data: { tryItBaseUrl: dto.tryItBaseUrl }
+    });
+
+    return {
+      id: ps.id,
+      title: ps.title,
+      description: ps.description,
+      version: ps.version,
+      oasVersion: ps.oasVersion,
+      role: ROLE.OWNER,
+      isDeleted: ps.isDeleted
+    }
+
   }
 
   // DELETE /projects/:id — 소프트 삭제
   async softDeleteProject(userId: number, projectId: number): Promise<void> {
-    // TODO: isDeleted = true
-    throw new Error('not implemented');
+    // 프로젝트 조회  
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId }
+    });
+    // 프로젝트 체크 
+    if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
+    if (project.isDeleted) throw new BadRequestException('이미 삭제된 프로젝트 입니다.');
+
+    // isDeleted = true
+    await this.prisma.project.update({
+      where: { id: projectId },
+      data: { isDeleted: true }
+    });
+
   }
 
   // POST /projects/:id/spec-commits — 스펙 업데이트
@@ -146,7 +200,7 @@ export class ProjectsService {
       where: { id: projectId },
       select: { specJsonUrl: true },
     });
-    if (!project) throw new NotFoundException('프로젝트 없음');
+    if (!project) throw new NotFoundException('프로젝트가 없습니다.');
 
     const url = dto.specJsonUrl ?? project.specJsonUrl;
 
