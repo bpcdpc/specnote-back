@@ -9,7 +9,7 @@ export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 타 서비스가 호출 (memberships 초대 / mentions 멘션). 라우트 없음.
-  async createNotification(userId: number, dto: CreateNotificationDto): Promise<Notification> {
+  async createNotification(dto: CreateNotificationDto): Promise<Notification> {
     // Notification 생성 (type 별 nullable FK: invitedProjectId / mentionedCommentId)
     const notification = await this.prisma.notification.create({
       data: {
@@ -53,7 +53,7 @@ export class NotificationsService {
       endpointId: noti.mentionedComment?.endpointId ?? null,
     }));
 
-    return notificationViews;         
+    return notificationViews;
   }
 
   // PATCH /notifications/:id/read — 읽음 처리

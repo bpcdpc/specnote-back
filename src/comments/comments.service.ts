@@ -34,8 +34,11 @@ export class CommentsService {
     dto: CreateCommentDto,
   ): Promise<Comment> {
     // TODO
-    // 1. parentId=null 로 댓글 생성 (트랜잭션으로 묶지 않음 — 멘션 실패로 본문 날리지 않기 위해)
-    // 2. mentionsService.syncMemberMentions / syncEndpointMentions 호출
+    // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400)
+    //    - mentionedUserIds: 해당 프로젝트 멤버인지
+    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지
+    // 2. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
+    // 3. mentionsService.syncMemberMentions / syncEndpointMentions 호출
     throw new Error('not implemented');
   }
 
@@ -46,8 +49,12 @@ export class CommentsService {
     dto: CreateCommentDto,
   ): Promise<Comment> {
     // TODO
-    // 1. normalizeReply(parentId) → { parentId, endpointId } (2뎁스 고정 + endpointId 상속)
-    // 2. 댓글 생성 후 멘션 sync (createComment 와 동일)
+    // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400, createComment 와 동일)
+    //    - mentionedUserIds: 해당 프로젝트 멤버인지
+    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지
+    // 2. normalizeReply(parentId) → { parentId, endpointId } (2뎁스 고정 + endpointId 상속)
+    // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
+    // 4. mentionsService.syncMemberMentions / syncEndpointMentions 호출
     throw new Error('not implemented');
   }
 
@@ -75,9 +82,12 @@ export class CommentsService {
   ): Promise<void> {
     // TODO
     // [tx 밖 선검증]
-    //  1. comment 조회(projectId 확보). parentId != null 이면 거부 (최상위만 이동)
-    //  2. targetEndpoint 조회 — 없거나 isDeleted → BadRequest
-    //     targetEndpoint.projectId !== comment.projectId → Forbidden
+    //  1. comment 조회(projectId 확보). parentId != null 이면 거부 (최상위만 이동 → 400)
+    //  2. targetEndpoint 조회 — 아래 셋 모두 BadRequest(400) 로 통일
+    //     - 없거나 isDeleted
+    //     - projectId !== comment.projectId (다른 프로젝트 소속)
+    //     세 경우를 400 하나로 뭉개는 이유: 400/404 로 구분하면
+    //     endpointId 열거가 가능 → 리소스 은닉을 위해 400 통일
     // [tx]
     //  3. 최상위 + 대댓글 endpointId 를 targetEndpointId 로 일괄 갱신
     throw new Error('not implemented');
