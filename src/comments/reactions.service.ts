@@ -17,8 +17,8 @@ export class ReactionsService {
     const comment = await this.prisma.comment.findUnique({
       where:{
         id: commentId,
-        select:{projectId:true}
       },
+      select:{projectId:true},
     });
     if(!comment){
       throw new NotFoundException('댓글을 찾을 수 없습니다.');
