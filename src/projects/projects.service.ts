@@ -62,17 +62,17 @@ export class ProjectsService {
   async findMyProjects(userId: number): Promise<ProjectSummary[]> {
     // membership(isDeleted=false) 로 내 프로젝트만 조회 → role 포함해 ProjectSummary[] 매핑
     const memberships = await this.prisma.membership.findMany({
-      where:{
+      where: {
         userId,
         isDeleted: false,
-        project:  { isDeleted: false}
+        project: { isDeleted: false },
       },
       include: {
-        project: true, 
+        project: true,
       },
     });
 
-    return memberships.map((member)=>({
+    return memberships.map((member) => ({
       id: member.project.id,
       title: member.project.title,
       description: member.project.description,
@@ -80,7 +80,7 @@ export class ProjectsService {
       oasVersion: member.project.oasVersion,
       role: member.role,
       isDeleted: member.project.isDeleted,
-    }))
+    }));
   }
 
   // GET /projects/:id — 프로젝트 진입
@@ -140,23 +140,23 @@ export class ProjectsService {
 
   // PATCH /projects/:id — tryItBaseUrl 만 수정 (커밋 없음)
   async updateProject(
-    userId: number,
     projectId: number,
     dto: UpdateProjectDto,
   ): Promise<ProjectSummary> {
     // tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
-    // 프로젝트 조회  
+    // 프로젝트 조회
     const project = await this.prisma.project.findUnique({
-      where: { id: projectId }
+      where: { id: projectId },
     });
-    // 프로젝트 체크 
+    // 프로젝트 체크
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
-    if (project.isDeleted) throw new BadRequestException('삭제된 프로젝트 입니다.');
+    if (project.isDeleted)
+      throw new BadRequestException('삭제된 프로젝트 입니다.');
 
-    // tryItBaseUrl update 
+    // tryItBaseUrl update
     const ps = await this.prisma.project.update({
       where: { id: projectId },
-      data: { tryItBaseUrl: dto.tryItBaseUrl }
+      data: { tryItBaseUrl: dto.tryItBaseUrl },
     });
 
     return {
@@ -166,27 +166,26 @@ export class ProjectsService {
       version: ps.version,
       oasVersion: ps.oasVersion,
       role: ROLE.OWNER,
-      isDeleted: ps.isDeleted
-    }
-
+      isDeleted: ps.isDeleted,
+    };
   }
 
   // DELETE /projects/:id — 소프트 삭제
-  async softDeleteProject(userId: number, projectId: number): Promise<void> {
-    // 프로젝트 조회  
+  async softDeleteProject(projectId: number): Promise<void> {
+    // 프로젝트 조회
     const project = await this.prisma.project.findUnique({
-      where: { id: projectId }
+      where: { id: projectId },
     });
-    // 프로젝트 체크 
+    // 프로젝트 체크
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
-    if (project.isDeleted) throw new BadRequestException('이미 삭제된 프로젝트 입니다.');
+    if (project.isDeleted)
+      throw new BadRequestException('이미 삭제된 프로젝트 입니다.');
 
     // isDeleted = true
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { isDeleted: true }
+      data: { isDeleted: true },
     });
-
   }
 
   // POST /projects/:id/spec-commits — 스펙 업데이트

@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Membership, NOTIFICATION_TYPE, ROLE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
@@ -27,10 +31,10 @@ export class MembershipsService {
       throw new NotFoundException('사용자 이메일이 없습니다.');
     }
 
-    //멥버십 체크 
+    //멥버십 체크
     const membershipCheck = await this.getMembership(user.id, projectId);
 
-    if(membershipCheck && membershipCheck.isDeleted === false){
+    if (membershipCheck && membershipCheck.isDeleted === false) {
       throw new ConflictException('이미 멤버로 존재합니다.');
     }
     //멤버십 저장
@@ -52,31 +56,30 @@ export class MembershipsService {
     });
 
     //초대 알림 생성
-    await this.notificationService.createNotification(ownerId, {
+    await this.notificationService.createNotification({
       recipientId: user.id,
       type: NOTIFICATION_TYPE.INVITED,
       senderId: ownerId,
       invitedProjectId: projectId,
     });
-    
+
     return membership;
   }
 
   // DELETE /projects/:id/members/:userId — 제거(소프트)
   async removeMember(
-    ownerId: number,
     projectId: number,
     targetUserId: number,
   ): Promise<Membership> {
     // isDeleted = true → 갱신된 Membership 반환
     const membershipCheck = await this.getMembership(targetUserId, projectId);
-    if(!membershipCheck) {
+    if (!membershipCheck) {
       throw new NotFoundException('존재하지 않는 멤버입니다.');
     }
-    if(membershipCheck.isDeleted){
+    if (membershipCheck.isDeleted) {
       throw new ConflictException('비활성된 멤버입니다.');
     }
-    if(membershipCheck.role === ROLE.OWNER) {
+    if (membershipCheck.role === ROLE.OWNER) {
       throw new ConflictException('OWNER 멤버는 삭제 불가 합니다.');
     }
 
@@ -95,7 +98,7 @@ export class MembershipsService {
   }
 
   // GET /projects/:id/members — 멤버 목록
-  async findMembers(userId: number, projectId: number): Promise<Membership[]> {
+  async findMembers(projectId: number): Promise<Membership[]> {
     // 해당 프로젝트의 isDeleted=false 멤버십 목록
     const memberships = await this.prisma.membership.findMany({
       where: {

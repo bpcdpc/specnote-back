@@ -64,22 +64,18 @@ export class ProjectsController {
   @ProjectRole(ROLE.OWNER)
   @Patch(':id')
   updateProject(
-    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateProjectDto,
   ) {
-    return this.projectsService.updateProject(user.id, id, dto);
+    return this.projectsService.updateProject(id, dto);
   }
 
   @ApiOperation({ summary: '[Owner] 프로젝트 삭제' })
   @UseGuards(MembershipGuard)
   @ProjectRole(ROLE.OWNER)
   @Delete(':id')
-  softDeleteProject(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.projectsService.softDeleteProject(user.id, id);
+  softDeleteProject(@Param('id', ParseIntPipe) id: number) {
+    return this.projectsService.softDeleteProject(id);
   }
 
   @ApiOperation({ summary: '[Owner] 스펙 업데이트' })
@@ -113,20 +109,16 @@ export class ProjectsController {
   @ProjectRole(ROLE.OWNER)
   @Delete(':id/members/:userId')
   removeMember(
-    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Param('userId', ParseIntPipe) userId: number,
   ) {
-    return this.membershipsService.removeMember(user.id, id, userId);
+    return this.membershipsService.removeMember(id, userId);
   }
 
   @ApiOperation({ summary: '멤버 목록' })
   @UseGuards(MembershipGuard)
   @Get(':id/members')
-  findMembers(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.membershipsService.findMembers(user.id, id);
+  findMembers(@Param('id', ParseIntPipe) id: number) {
+    return this.membershipsService.findMembers(id);
   }
 }
