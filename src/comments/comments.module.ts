@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiModule } from '../ai/ai.module';
-// import { CommentsController } from './comments.controller';
+import { CommentsController } from './comments.controller';
 import { CommentsService } from './comments.service';
 import { ReactionsService } from './reactions.service';
 import { MentionsService } from './mentions.service';
@@ -10,7 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [AiModule, NotificationsModule], // ai-summary에서 AiService 필요, mentioins에서 NotificationService 필요
-  // controllers: [CommentsController], 필요없음
+  controllers: [CommentsController],
   providers: [
     CommentsService,
     ReactionsService,
