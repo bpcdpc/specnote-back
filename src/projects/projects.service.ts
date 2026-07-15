@@ -71,15 +71,17 @@ export class ProjectsService {
         project: true, 
       },
     });
+    if (!memberships || memberships.length < 1) 
+      throw new NotFoundException('참여 프로젝트가 없습니다.');
 
-    return memberships.map((membership)=>({
-      id: membership.project.id,
-      title: membership.project.title,
-      description: membership.project.description,
-      version: membership.project.version,
-      oasVersion: membership.project.oasVersion,
-      role: membership.role,
-      isDeleted: membership.project.isDeleted,
+    return memberships.map((member)=>({
+      id: member.project.id,
+      title: member.project.title,
+      description: member.project.description,
+      version: member.project.version,
+      oasVersion: member.project.oasVersion,
+      role: member.role,
+      isDeleted: member.project.isDeleted,
     }))
   }
 
@@ -88,14 +90,14 @@ export class ProjectsService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    if (!project) throw new NotFoundException('프로젝트 없음');
+    if (!project) throw new NotFoundException('프로젝트가 없습니다.');
 
     // role 취득 (가드가 멤버십은 이미 검증했지만, 뷰에 role 이 필요)
     const membership = await this.prisma.membership.findUnique({
       where: { projectId_userId: { projectId, userId } },
       select: { role: true },
     });
-    if (!membership) throw new NotFoundException('프로젝트 없음');
+    if (!membership) throw new NotFoundException('프로젝트가 없습니다.');
 
     // 엔드포인트 경량 목록 (삭제 포함)
     const endpoints = await this.prisma.endpoint.findMany({
@@ -156,11 +158,11 @@ export class ProjectsService {
     });
     // 프로젝트 체크 
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
-    if (project.isDeleted) throw new NotFoundException('삭제된 프로젝트 입니다.');
+    if (project.isDeleted) throw new BadRequestException('삭제된 프로젝트 입니다.');
 
     // // 프로젝트 onwer 맴버십 체크 
     // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
-    // if (project.memberships[0].role !== ROLE.OWNER) throw new NotFoundException('맴버십 OWNER가 아닙니다.');
+    // if (project.memberships[0].role !== ROLE.OWNER) throw new BadRequestException('맴버십 OWNER가 아닙니다.');
 
     // tryItBaseUrl update 
     const ps = await this.prisma.project.update({
@@ -193,11 +195,11 @@ export class ProjectsService {
     });
     // 프로젝트 체크 
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
-    if (project.isDeleted) throw new NotFoundException('이미 삭제된 프로젝트 입니다.');
+    if (project.isDeleted) throw new BadRequestException('이미 삭제된 프로젝트 입니다.');
 
     // // 프로젝트 onwer 맴버십 체크 
     // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
-    // if (project.memberships[0].role !== ROLE.OWNER) throw new NotFoundException('맴버십 OWNER가 아닙니다.');
+    // if (project.memberships[0].role !== ROLE.OWNER) throw new BadRequestException('맴버십 OWNER가 아닙니다.');
 
     // isDeleted = true
     await this.prisma.project.update({
@@ -205,7 +207,6 @@ export class ProjectsService {
       data: { isDeleted: true}
     });
 
-    //todo: shk-20260714 리턴값 없이 진행?
   }
 
   // POST /projects/:id/spec-commits — 스펙 업데이트
