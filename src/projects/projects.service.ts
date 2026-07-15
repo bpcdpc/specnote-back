@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, ROLE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -45,7 +45,7 @@ export class ProjectsService {
           description: info.description ?? null,
           version: info.version,
           oasVersion: loaded.oas,
-          memberships: { create: { userId: ownerId, role: 'OWNER' } },
+          memberships: { create: { userId: ownerId, role: ROLE.OWNER } },
         },
         select: { id: true },
       });
@@ -71,8 +71,6 @@ export class ProjectsService {
         project: true, 
       },
     });
-    if (!memberships || memberships.length < 1) 
-      throw new NotFoundException('참여 프로젝트가 없습니다.');
 
     return memberships.map((member)=>({
       id: member.project.id,
@@ -149,20 +147,11 @@ export class ProjectsService {
     // tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
     // 프로젝트 조회  
     const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        memberships: {
-          where: { id: userId}
-        }
-      }
+      where: { id: projectId }
     });
     // 프로젝트 체크 
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
     if (project.isDeleted) throw new BadRequestException('삭제된 프로젝트 입니다.');
-
-    // // 프로젝트 onwer 맴버십 체크 
-    // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
-    // if (project.memberships[0].role !== ROLE.OWNER) throw new BadRequestException('맴버십 OWNER가 아닙니다.');
 
     // tryItBaseUrl update 
     const ps = await this.prisma.project.update({
@@ -176,7 +165,7 @@ export class ProjectsService {
       description: ps.description,
       version: ps.version,
       oasVersion: ps.oasVersion,
-      role: project.memberships[0].role,
+      role: ROLE.OWNER,
       isDeleted: ps.isDeleted
     }
 
@@ -186,25 +175,16 @@ export class ProjectsService {
   async softDeleteProject(userId: number, projectId: number): Promise<void> {
     // 프로젝트 조회  
     const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        memberships: {
-          where: { id: userId}
-        }
-      }
+      where: { id: projectId }
     });
     // 프로젝트 체크 
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
     if (project.isDeleted) throw new BadRequestException('이미 삭제된 프로젝트 입니다.');
 
-    // // 프로젝트 onwer 맴버십 체크 
-    // if (!project.memberships) throw new NotFoundException('프로젝트 맵버십 정보가 없습니다.');
-    // if (project.memberships[0].role !== ROLE.OWNER) throw new BadRequestException('맴버십 OWNER가 아닙니다.');
-
     // isDeleted = true
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { isDeleted: true}
+      data: { isDeleted: true }
     });
 
   }
@@ -220,7 +200,7 @@ export class ProjectsService {
       where: { id: projectId },
       select: { specJsonUrl: true },
     });
-    if (!project) throw new NotFoundException('프로젝트 없음');
+    if (!project) throw new NotFoundException('프로젝트가 없습니다.');
 
     const url = dto.specJsonUrl ?? project.specJsonUrl;
 
