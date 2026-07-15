@@ -21,30 +21,30 @@
 
 범례: ⬜ 미착수 · 🔄 리뷰 중 · ✅ 머지됨
 
-| 라우트 / 함수                                               | 담당       | 마감      | 상태       |
-| ----------------------------------------------------------- | ---------- | --------- | ---------- |
-| `createNotification` (내부)                                 | 희경, 혜빈 | 7/10 (금) | 🔄 리뷰 중 |
-| `getMembership` (내부)                                      | 희경, 혜빈 | 7/10 (금) | 🔄 리뷰 중 |
-| `getLatestSnapshotVersion` (내부)                           | 희경, 혜빈 | 7/10 (금) | 🔄 리뷰 중 |
-| `GET /projects` (findMyProjects)                            | 희경, 혜빈 | 7/14 (화) | ⬜         |
-| `PATCH /projects/:id` (updateProject)                       | 희경, 혜빈 | 7/14 (화) | ⬜         |
-| `DELETE /projects/:id` (softDeleteProject)                  | 희경, 혜빈 | 7/14 (화) | ⬜         |
-| `POST /projects/:id/members` (inviteMember)                 | 혜빈       | 7/15 (수) | 🔄 리뷰 중 |
-| `DELETE /projects/:id/members/:userId` (removeMember)       | 혜빈       | 7/15 (수) | 🔄 리뷰 중 |
-| `GET /projects/:id/members` (findMembers)                   | 혜빈       | 7/15 (수) | 🔄 리뷰 중 |
-| `GET /endpoints/:id` (findEndpointDetail)                   | 혜빈       | 7/16 (목) | ⬜         |
-| `POST /comments/:id/reactions` (toggleReaction)             | 혜빈       | 7/16 (목) | ⬜         |
-| `GET /notifications` (findNotifications)                    | 혜빈       | 7/16 (목) | 🔄 리뷰 중 |
-| `PATCH /notifications/:id/read` (markAsRead)                | 혜빈       | 7/16 (목) | 🔄 리뷰 중 |
-| `ai.generateSummary` (Azure 호출)                           | 혜빈       | 7/20 (월) | ⬜         |
-| `POST /endpoints/:id/ai-summary` (summarizeThread)          | 혜빈       | 7/23 (목) | ⬜         |
-| `GET /endpoints/:id/comments` (findComments)                | 희경       | 7/15 (수) | ⬜         |
-| `syncMemberMentions` / `syncEndpointMentions` (내부)        | 희경       | 7/16 (목) | ⬜         |
-| `POST /endpoints/:id/comments` (createComment)              | 희경       | 7/17 (금) | ⬜         |
-| `POST /comments/:id/replies` (createReply + normalizeReply) | 희경       | 7/20 (월) | ⬜         |
-| `PATCH /comments/:id` (updateComment + assertAuthor)        | 희경       | 7/21 (화) | ⬜         |
-| `DELETE /comments/:id` (softDeleteComment)                  | 희경       | 7/21 (화) | ⬜         |
-| `PATCH /comments/:id/move` (moveThread)                     | 희경       | 7/22 (수) | ⬜         |
+| 라우트 / 함수                                               | 담당       | 마감      | 상태      |
+| ----------------------------------------------------------- | ---------- | --------- | --------- |
+| `createNotification` (내부)                                 | 희경, 혜빈 | 7/10 (금) | ✅ 머지됨 |
+| `getMembership` (내부)                                      | 희경, 혜빈 | 7/10 (금) | ✅ 머지됨 |
+| `getLatestSnapshotVersion` (내부)                           | 희경, 혜빈 | 7/10 (금) | ✅ 머지됨 |
+| `GET /projects` (findMyProjects)                            | 희경, 혜빈 | 7/14 (화) | ✅ 머지됨 |
+| `PATCH /projects/:id` (updateProject)                       | 희경, 혜빈 | 7/14 (화) | ✅ 머지됨 |
+| `DELETE /projects/:id` (softDeleteProject)                  | 희경, 혜빈 | 7/14 (화) | ✅ 머지됨 |
+| `POST /projects/:id/members` (inviteMember)                 | 혜빈       | 7/15 (수) | ✅ 머지됨 |
+| `DELETE /projects/:id/members/:userId` (removeMember)       | 혜빈       | 7/15 (수) | ✅ 머지됨 |
+| `GET /projects/:id/members` (findMembers)                   | 혜빈       | 7/15 (수) | ✅ 머지됨 |
+| `GET /endpoints/:id` (findEndpointDetail)                   | 혜빈       | 7/16 (목) | ✅ 머지됨 |
+| `POST /comments/:id/reactions` (toggleReaction)             | 혜빈       | 7/16 (목) | ✅ 머지됨 |
+| `GET /notifications` (findNotifications)                    | 혜빈       | 7/16 (목) | ✅ 머지됨 |
+| `PATCH /notifications/:id/read` (markAsRead)                | 혜빈       | 7/16 (목) | ✅ 머지됨 |
+| `ai.generateSummary` (Azure 호출)                           | 혜빈       | 7/20 (월) | ⬜        |
+| `POST /endpoints/:id/ai-summary` (summarizeThread)          | 혜빈       | 7/23 (목) | ⬜        |
+| `GET /endpoints/:id/comments` (findComments)                | 희경       | 7/15 (수) | ⬜        |
+| `syncMemberMentions` / `syncEndpointMentions` (내부)        | 희경       | 7/16 (목) | ⬜        |
+| `POST /endpoints/:id/comments` (createComment)              | 희경       | 7/17 (금) | ⬜        |
+| `POST /comments/:id/replies` (createReply + normalizeReply) | 희경       | 7/20 (월) | ⬜        |
+| `PATCH /comments/:id` (updateComment + assertAuthor)        | 희경       | 7/21 (화) | ⬜        |
+| `DELETE /comments/:id` (softDeleteComment)                  | 희경       | 7/21 (화) | ⬜        |
+| `PATCH /comments/:id/move` (moveThread)                     | 희경       | 7/22 (수) | ⬜        |
 
 ## 트랙별 흐름
 
