@@ -88,4 +88,45 @@ export class AiSummaryService {
     }
     return ai;
   }
+  async searchComments(endpointId: number, query: string): Promise<Comment[]> {
+  const aiUser = await this.findAiUser();
+
+  const comments = await this.prisma.comment.findMany({
+    where: {
+      endpointId,
+      isDeleted: false,
+      userId: { not: aiUser.id },
+    },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      user: {
+        select: { userName: true },
+      },
+    },
+  });
+
+  if (comments.length === 0) {
+    return [];
+  }
+
+  const relevantIds = await this.aiService.findRelevantCommentIds(
+    comments.map((c) => ({
+      id: c.id,
+      author: c.user.userName,
+      content: c.content,
+    })),
+    query,
+  );
+
+  if (relevantIds.length === 0) {
+    return [];
+  }
+
+  return this.prisma.comment.findMany({
+    where: {
+      id: { in: relevantIds },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+}
 }

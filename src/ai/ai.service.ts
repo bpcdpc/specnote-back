@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SummaryInput } from '../comments/comments.type';
 
 @Injectable()
@@ -68,5 +68,69 @@ export class AiService {
       )
       .join('\n');
   }
+  async findRelevantCommentIds(
+  comments: { id: number; author: string; content: string }[],
+  query: string,
+): Promise<number[]> {
+  const commentList = comments
+    .map((c) => `id=${c.id} | ${c.author}: ${c.content}`)
+    .join('\n');
+  //console.log('DEBUG comment:', commentList);
+  const url = `${this.endpoint}/openai/v1/chat/completions`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': this.apiKey,
+    },
+    body: JSON.stringify({
+      model: this.deploymentName,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '너는 댓글 목록에서 검색어와 관련된 댓글을 찾는 어시스턴트야. ' +
+            '반드시 JSON 배열 형식으로만 응답해. 다른 설명이나 마크다운 없이 숫자 id의 배열만 반환해. ' +
+            '예시: [1, 5, 9]. 관련 댓글이 없으면 빈 배열 []을 반환해.',
+        },
+        {
+          role: 'user',
+          content: `댓글 목록:\n${commentList}\n\n검색어: "${query}"\n\n위 검색어와 관련 있는 댓글들의 id를 JSON 배열로 반환해줘.`,
+        },
+      ],
+      max_completion_tokens: 300,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new InternalServerErrorException(
+      `Azure AI Foundry 호출 실패: ${response.status} ${errorBody}`,
+    );
+  }
+
+  const data = await response.json();
+  const raw = data.choices?.[0]?.message?.content;
+
+  if (!raw) {
+    throw new InternalServerErrorException('검색 결과를 받지 못했습니다.');
+  }
+
+  try {
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const ids = JSON.parse(cleaned);
+
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'number')) {
+      throw new Error('예상치 못한 응답 형식');
+    }
+
+    return ids;
+  } catch {
+    throw new InternalServerErrorException('AI 응답 파싱에 실패했습니다.');
+  }
 }
+}
+
 
