@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Comment } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
-import type { CommentTree, ReplyParent } from './comments.type';
+import type { CommentTree, ReactionSummary, ReplyParent } from './comments.type';
 
 @Injectable()
 export class CommentsService {
@@ -19,13 +19,169 @@ export class CommentsService {
     userId: number,
     endpointId: number,
   ): Promise<CommentTree[]> {
-    // TODO
     // 1. 해당 endpoint 의 댓글 전량 조회 (삭제 포함, 작성자/리액션/멘션 조인)
     // 2. CommentView 로 매핑 — 삭제 댓글 content 는 "삭제된 댓글입니다" 로 마스킹
     //    reactions 는 ReactionSummary[] 로 집계, reactedByMe 는 userId 기준
     // 3. parentId 로 최상위/대댓글 갈라 CommentTree[] 조립 (2뎁스 고정, 시간순)
-    throw new Error('not implemented');
+
+    const comments = await this.prisma.comment.findMany({
+      where: {
+        endpointId: endpointId,
+        parentId: null, // 1. 최상위 댓글만 먼저 조회
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            userName: true,
+            email: true,
+          },
+        },
+        replies: {
+          include: {
+            replies: true, // 2. 대댓글 조회 
+            user: {
+              select: {
+                id: true,
+                userName: true,
+                email: true,
+              },
+            },
+            memberMentions: {
+              include: {
+                mentionedUser: {
+                  select: {
+                    id: true,
+                    userName: true,
+                    isAi: true,
+                  },
+                },
+              },
+            },
+            endpointMentions: {
+              include: {
+                endpoint: {
+                  select: {
+                    id: true,
+                    path: true,
+                    method: true,
+                  },
+                },
+              },
+            },
+            reactions: true, 
+          },
+          orderBy: {
+            createdAt: 'asc', 
+          },
+        },
+        memberMentions: {
+          include: {
+            mentionedUser: {
+              select: {
+                id: true,
+                userName: true,
+                isAi: true,
+              },
+            },
+          },
+        },
+        endpointMentions: {
+          include: {
+            endpoint: {
+              select: {
+                  id: true,
+                  path: true,
+                  method: true,
+                },
+            },
+          },
+        },
+        reactions: true,
+      },
+      orderBy: {
+        createdAt: 'asc', 
+      },
+    });
+
+    // 3. 리턴타입(CommentTree) 적용하여 리턴
+    return comments.map((comment) => this.createCommentTree(userId, comment));
+   
   }
+
+  // 댓글 포멧 생성
+  private createCommentTree(curUserId: number, raw: any): CommentTree {
+    return {
+      id: raw.id,
+      endpointId: raw.endpointId,
+      parentId: raw.parentId,
+      // 삭제된 댓글인 경우 내용 처리 블라인드
+      content: raw.isDeleted ? '삭제된 댓글입니다.' : raw.content,
+      isDeleted: raw.isDeleted,
+      
+      // PublicUser 정보 매핑
+      author: {
+        id: raw.user.id,
+        userName: raw.user.userName,
+        email: raw.user.email
+      },
+      
+      createdAt: raw.createdAt.toISOString(),
+      updatedAt: raw.updatedAt.toISOString(),
+
+      // 댓글 리액션 리턴타입 적용
+      reactions: this.summarizeReactions(curUserId, raw.reactions),
+
+      // 멤버 멘션 매핑
+      memberMentions: (raw.memberMentions || []).map((m: any) => ({
+        userId: m.mentionedUser.id,
+        userName: m.mentionedUser.userName,
+      })),
+
+      // 엔드포인트 멘션 매핑
+      endpointMentions: (raw.endpointMentions || []).map((e: any) => ({
+        endpointId: e.endpoint.id,
+        path: e.endpoint.path,
+        method: e.endpoint.method,
+      })),
+
+      // 대댓글(replies)이 존재하면 재귀 호출하여 트리 구조 완성
+      replies: raw.replies ? raw.replies.map((reply: any) => this.createCommentTree(curUserId, reply)) : [],
+    };
+  }
+
+  //댓글 리액션 리턴타입 생성 
+  private summarizeReactions(
+    currUserId: number, // 현재 로그인한 유저의 ID.
+    reactions: Record<string, any>[] = []
+  ): ReactionSummary[] {
+    
+    const summaryMap = new Map<string, ReactionSummary>();
+
+    reactions.forEach((react) => {
+      const reactionType = react.type; // 예: 'DONE', 'CHECKING' 
+      
+      // 1. 이미 등록된 리액션 타입이 없다면 초기값 생성
+      const existing = summaryMap.get(reactionType) || { 
+        type: reactionType, 
+        count: 0, 
+        reactedByMe: false // 기본값은 false
+      };
+
+      // 2. 개수 누적
+      existing.count += 1;
+
+      // 3. 리액션을 남긴 유저가 현재 로그인한 유저와 일치하는지 확인
+      if (react.userId === currUserId) {
+        existing.reactedByMe = true;
+      }
+
+      summaryMap.set(reactionType, existing);
+    });
+
+    return Array.from(summaryMap.values());
+  }
+
 
   // POST /endpoints/:id/comments — 최상위 댓글
   // projectId 는 @CurrentProjectId 주입값 (가드가 endpoint 테이블을 통해 projectId 역참조해둠).
@@ -36,14 +192,95 @@ export class CommentsService {
     projectId: number,
     dto: CreateCommentDto,
   ): Promise<Comment> {
-    // TODO
     // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400)
     //    - mentionedUserIds: 해당 프로젝트 멤버인지 (projectId 사용)
     //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지 (projectId 사용)
     // 2. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
     // 3. mentionsService.syncMemberMentions(commentId, projectId, ...) /
     //    syncEndpointMentions(commentId, projectId, ...) 호출
-    throw new Error('not implemented');
+    if (!dto.content || dto.content.trim().length === 0){
+      throw new BadRequestException('내용을 입력하세요.');
+    }  
+
+    //1. 멘션 대상 검증 
+    //프로젝트 멤버인지 체크  
+    if (!(await this.checkMentionUsers(projectId, dto))){
+      throw new BadRequestException('유효하지 않은 멘션 멤버가 있습니다.');
+    }
+    //프로젝트 endpoint인지 체크
+    if (!(await this.checkMentionEndpoints(projectId, dto))){
+      throw new BadRequestException('유효하지 않은 EndPoint가 있습니다.');
+    }
+
+    //2. 댓글 생성 
+    const comment = await this.prisma.comment.create({
+      data: {
+        endpointId: endpointId,
+        userId: userId, 
+        content: dto.content,
+        projectId: projectId
+      }
+    });
+    
+    // 3. 멘션 사용자 등록 
+    if (dto.mentionedUserIds && dto.mentionedUserIds.length > 0) {
+      await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, dto.mentionedUserIds);
+    }
+    // 3. 멘션 EndPoint 등록 
+    if (dto.mentionedEndpointIds && dto.mentionedEndpointIds.length > 0) {
+      await this.mentionsService.syncEndpointMentions(comment.id, projectId, dto.mentionedEndpointIds);
+    }
+
+    return comment;
+
+  }
+
+  // 멘션대상 검증 (멤버십)
+  async checkMentionUsers(projectId: number, dto: CreateCommentDto): Promise<Boolean> {
+    if (dto.mentionedUserIds && dto.mentionedUserIds.length > 0) {
+      // 프로젝트 멤버 필터 조회 
+      const existingMembers = await this.prisma.membership.findMany({
+        where: {
+          id: {
+            in: dto.mentionedUserIds,
+          },
+          projectId: projectId,
+          isDeleted: false,
+        },
+        select: {
+          id: true,
+        },
+      });
+      
+      if (existingMembers.length !== dto.mentionedUserIds.length)
+        return false;
+    }
+
+    return true;
+  }
+
+  // 멘션대상 검증 (EndPoint)
+  async checkMentionEndpoints(projectId: number, dto: CreateCommentDto): Promise<Boolean> {
+    if (dto.mentionedEndpointIds && dto.mentionedEndpointIds.length > 0) {
+      // 프로젝트 EndPoint 필터 조회 
+      const existingEndpoints = await this.prisma.endpoint.findMany({
+        where: {
+          id: {
+            in: dto.mentionedEndpointIds,
+          },
+          projectId: projectId,
+          isDeleted: false,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (existingEndpoints.length !== dto.mentionedEndpointIds.length) 
+        return false;
+    }
+
+    return true;
   }
 
   // POST /comments/:id/replies — 대댓글
