@@ -26,6 +26,7 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
+import { AskQuestionDto } from './dto/ask-question.dto';
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
 // 각 메서드에서 전체 경로를 지정한다. (endpoints/:id/... 와 comments/:id/... 혼재)
@@ -94,6 +95,17 @@ export class CommentsController {
   {
     return this.aiSummaryService.searchComments(endpointId,query);
   }
+  @ApiOperation({ summary: 'AI에게 스레드 관련 질문하기 (저장 안 함)' })
+  @ProjectScope('endpoint')
+  @Post('endpoints/:id/comments/ai-ask')
+  async askAboutThread(
+  @Param('id', ParseIntPipe) endpointId: number,
+  @Body() dto: AskQuestionDto,
+  ): Promise<{ answer: string }> {
+  return this.aiSummaryService
+    .askAboutThread(endpointId, dto.question)
+    .then((answer) => ({ answer }));
+}
   // ── :id = commentId (@ProjectScope('comment')) ──
 
   @ApiOperation({ summary: '대댓글 작성' })

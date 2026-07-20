@@ -131,6 +131,59 @@ export class AiService {
     throw new InternalServerErrorException('AI 응답 파싱에 실패했습니다.');
   }
 }
+
+async answerQuestion(
+  thread: SummaryInput[],
+  question: string,
+): Promise<string> {
+  const context = this.buildPrompt(thread); // 기존 buildPrompt 재사용
+
+  const url = `${this.endpoint}/openai/v1/chat/completions`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': this.apiKey,
+    },
+    body: JSON.stringify({
+      model: this.deploymentName,
+      messages: [
+        {
+          role: 'system',
+          content:
+            '너는 댓글 스레드 내용을 참고해서 질문에 답하는 어시스턴트야. ' +
+            '주어진 댓글 내용에 근거해서만 답변하고, 댓글에 없는 내용은 추측하지 말고 ' +
+            '답변할 땐 관련 발언을 한 작성자를 함께 언급해줘.'+
+            '"주어진 댓글과 관련된 내용을 찾을 수 없을 땐, 댓글에서 관련 내용을 찾을 수 없습니다"라고 답해. ' +
+            '3문장 이내로 간결하게 정리해.',
+        },
+        {
+          role: 'user',
+          content: `댓글 스레드:\n\n${context}\n\n질문: ${question}`,
+        },
+      ],
+      max_completion_tokens: 300,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new InternalServerErrorException(
+      `Azure AI Foundry 호출 실패: ${response.status} ${errorBody}`,
+    );
+  }
+
+  const data = await response.json();
+  const answer = data.choices?.[0]?.message?.content;
+
+  if (!answer) {
+    throw new InternalServerErrorException('답변을 받지 못했습니다.');
+  }
+
+  return answer.trim();
+}
 }
 
 

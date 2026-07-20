@@ -40,9 +40,8 @@ export class UsersService {
       select: { id: true, userName: true, email: true },
     });
   }
-
-  // id 조회
-  findById(id: number): Promise<PublicUser | null> {
+  // id로 조회
+  async findById(id: number): Promise<PublicUser | null> {
     return this.prisma.user.findUnique({
       where: { id },
       select: { id: true, userName: true, email: true },

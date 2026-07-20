@@ -129,4 +129,36 @@ export class AiSummaryService {
     orderBy: { createdAt: 'asc' },
   });
 }
+async askAboutThread(endpointId: number, question: string): Promise<string> {
+  const aiUser = await this.findAiUser();
+
+  const comments = await this.prisma.comment.findMany({
+    where: {
+      endpointId,
+      isDeleted: false,
+      userId: { not: aiUser.id }, // AI가 남긴 이전 답변은 컨텍스트에서 제외
+    },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      user: { select: { userName: true } },
+    },
+  });
+
+  if (comments.length === 0) {
+    throw new BadRequestException('참고할 댓글이 없습니다.');
+  }
+
+  const inputs: SummaryInput[] = comments.map((c) => ({
+    author: c.user.userName,
+    content: c.content,
+    createdAt: c.createdAt.toISOString(),
+  }));
+
+  try {
+    return await this.aiService.answerQuestion(inputs, question);
+  } catch (error) {
+    console.error('AI 질의응답 에러:', error);
+    throw new BadRequestException('답변 생성에 실패했습니다.');
+  }
+}
 }
