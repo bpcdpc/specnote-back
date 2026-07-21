@@ -1,11 +1,12 @@
-# 백엔드 기능 정의서 v0.2
+# 백엔드 기능 정의서 v0.5
 
-| 버전 | 일시                 | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ---- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| v0.1 | 2026.07.08 WED 09:08 | 컨트롤러 포함 상세본. 스펙 커밋 구조 확정 반영(applySpecCommit 공용 tx 헬퍼, createProject·commitSpec가 각자 트랜잭션 열고 호출, updateProject는 tryItBaseUrl만·커밋 없음, 스펙 URL 저장·refetch는 POST /spec-commits, 프로젝트 메타는 extractSpecInfo 유틸+라우트 인라인 write) + 엔드포인트 목록 경량화(findEndpoints·ProjectView.endpoints를 EndpointSummary[]로, operationJson은 상세에서만)                                                                                    |
-| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추가                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| v0.3 | 2026.07.13 MON 11:02 | 멤버 API 시그니처 축소(removeMember·findMembers에서 미사용 인자 제거 — 인가는 MembershipGuard가 처리), CommentView·NotificationView 시간 필드 Date → string(응답 직렬화 기준), SummaryInput은 서버 내부 타입이므로 Date 유지                                                                                                                                                                                                                                                        |
-| v0.4 | 2026.07.16 THU 00:05 | 가드가 역참조한 projectId를 서비스가 재사용하도록 시그니처 정리. createComment·createReply·toggleReaction에 projectId 인자 추가(@CurrentProjectId 주입), findEndpointDetail·moveThread에서 미사용 userId/ownerId 제거(인가는 MembershipGuard 전담). @CurrentProjectId 커스텀 데코레이터 추가. moveThread 스레드 이동 실패 케이스 400 통일 반영(ForbiddenException → BadRequestException). updateProject·softDeleteProject 시그니처에서 미사용 userId 제거(코드 반영분 문서 동기화). |
+| 버전 | 일시                 | 변경 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1 | 2026.07.08 WED 09:08 | 컨트롤러 포함 상세본. 스펙 커밋 구조 확정 반영(applySpecCommit 공용 tx 헬퍼, createProject·commitSpec가 각자 트랜잭션 열고 호출, updateProject는 tryItBaseUrl만·커밋 없음, 스펙 URL 저장·refetch는 POST /spec-commits, 프로젝트 메타는 extractSpecInfo 유틸+라우트 인라인 write) + 엔드포인트 목록 경량화(findEndpoints·ProjectView.endpoints를 EndpointSummary[]로, operationJson은 상세에서만)                                                                                                                                                                                                                                                                                                                                   |
+| v0.2 | 2026.07.09 THU 08:41 | 댓글 보기용 데이터 타입 정의 추가                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| v0.3 | 2026.07.13 MON 11:02 | 멤버 API 시그니처 축소(removeMember·findMembers에서 미사용 인자 제거 — 인가는 MembershipGuard가 처리), CommentView·NotificationView 시간 필드 Date → string(응답 직렬화 기준), SummaryInput은 서버 내부 타입이므로 Date 유지                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| v0.4 | 2026.07.16 THU 00:05 | 가드가 역참조한 projectId를 서비스가 재사용하도록 시그니처 정리. createComment·createReply·toggleReaction에 projectId 인자 추가(@CurrentProjectId 주입), findEndpointDetail·moveThread에서 미사용 userId/ownerId 제거(인가는 MembershipGuard 전담). @CurrentProjectId 커스텀 데코레이터 추가. moveThread 스레드 이동 실패 케이스 400 통일 반영(ForbiddenException → BadRequestException). updateProject·softDeleteProject 시그니처에서 미사용 userId 제거(코드 반영분 문서 동기화).                                                                                                                                                                                                                                                |
+| v0.5 | 2026.07.21 TUE 00:00 | syncMemberMentions 시그니처에 senderId 추가(4인자, 알림 발신자), sync 계열 주석을 "검증된 id만 받음·전량 교체·신규분만 알림"으로 정정. summarizeThread 시그니처 (actorUserId, endpointId) → (endpointId, projectId). CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string(다른 뷰 타입과 통일해 개발자 인식 편의). toggleReaction 서비스 시그니처 정의에 projectId 반영(v0.4 라우트표엔 있었으나 정의 줄 누락분). updateComment 주석 content만 → content 및 멘션 수정 가능. CreateNotificationDto에 senderId 추가(코드·10 명세 Notification 원형·syncMemberMentions senderId와 정합). users.service 반환타입 User → PublicUser 정정(정의 블록 누락분, password 제외 반영). findByEmail 주석에 AI 계정 제외 명시. |
 
 ---
 
@@ -93,13 +94,13 @@ class JwtAuthGuard extends AuthGuard('jwt') {}
 ### 서비스 users.service.ts
 
 ```tsx
-createUser(dto: CreateUserDto): Promise<User>
-// 가입: 이메일 중복 거부 + bcrypt 해시. 토큰 미발급
+createUser(dto: CreateUserDto): Promise<PublicUser>
+// 가입: 이메일 중복 거부 + bcrypt 해시. 토큰 미발급 (password 제외 PublicUser 반환)
 
-findByEmail(email: string): Promise<User | null>
-// 초대용 완전일치
+findByEmail(email: string): Promise<PublicUser | null>
+// 초대용 완전일치. AI 계정(isAi=true)은 초대 대상 아니므로 제외 (검색되지 않음)
 
-findById(id: number): Promise<User | null>
+findById(id: number): Promise<PublicUser | null>
 ```
 
 - DTO: `CreateUserDto`
@@ -249,7 +250,7 @@ findEndpointDetail(endpointId: number): Promise<EndpointDetail>
 | `DELETE /api/comments/:id`               | `softDeleteComment(user, id)`                     | `AuthUser`, `number`                                | `Promise<Comment>`          |
 | `PATCH /api/comments/:id/move` `[Owner]` | `moveThread(commentId, dto)`                      | `number`, `MoveCommentDto`                          | `Promise<void>`             |
 | `POST /api/comments/:id/reactions`       | `toggleReaction(user, commentId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
-| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(user, endpointId)`               | `AuthUser`, `number`                                | `Promise<Comment>`          |
+| `POST /api/endpoints/:id/ai-summary`     | `summarizeThread(endpointId, projectId)`          | `number`, `number`                                  | `Promise<Comment>`          |
 
 ### 서비스 comments.service.ts
 
@@ -268,7 +269,7 @@ createReply(userId, parentId, projectId, dto: CreateCommentDto): Promise<Comment
 
 updateComment(userId, commentId, dto: UpdateCommentDto): Promise<Comment>
 // [작성자 본인] 권한
-// content만 수정 가능
+// content 및 멘션 수정 가능 (content 변경 시 멘션도 재동기화 — resolveMentions + sync 계열 호출)
 
 softDeleteComment(userId, commentId): Promise<Comment>
 // [작성자 본인] 권한
@@ -303,24 +304,26 @@ private normalizeReply(parentId: number): Promise<ReplyParent>
 ### 서비스 reactions.service.ts
 
 ```tsx
-toggleReaction(userId, commentId, dto: CreateReactionDto): Promise<Reaction | null>
+toggleReaction(userId, commentId, projectId, dto: CreateReactionDto): Promise<Reaction | null>
 // @@unique 존재 시 제거, 없으면 생성
+// projectId 는 @CurrentProjectId 주입값 (Reaction.projectId 비정규화 컬럼에 저장)
 ```
 
 ### 서비스 mentions.service.ts (내부 호출, DTO 없음)
 
 ```tsx
-syncMemberMentions(commentId, projectId, mentionedUserIds: number[]): Promise<void>
-// 같은 프로젝트의 멤버 한정 + MENTIONED 알림
+syncMemberMentions(senderId, commentId, projectId, mentionedUserIds: number[]): Promise<void>
+// 호출부에서 검증된 id 만 받음. 기존 멘션 전량 교체, 신규 추가분에만 MENTIONED 알림
+// senderId 는 알림 발신자(누가 멘션했는지)
 
 syncEndpointMentions(commentId, projectId, mentionedEndpointIds: number[]): Promise<void>
-// 같은 프로젝트의 엔드포인트 한정
+// 호출부에서 검증된 id 만 받음. 기존 멘션 전량 교체 (엔드포인트 멘션은 알림 없음 → senderId 불필요)
 ```
 
 ### 서비스 ai-summary.service.ts (DTO 없음)
 
 ```tsx
-summarizeThread(actorUserId, endpointId): Promise<Comment>
+summarizeThread(endpointId, projectId): Promise<Comment>
 // 미삭제 댓글 수집해서 SummaryInput[] 으로 만들어서
 //   → ai.service의 generateSummary에 전달.
 //   → 반환받은 string과 findAiUser() 로 찾은 ai 계정을 조합해서 새 댓글 등록
@@ -526,11 +529,12 @@ type ReactionSummary = {
 // 조회 뷰 타입(findComments). write 계열은 Comment(Prisma 원형) 반환
 type CommentView = {
   id: number;
-  endpointId: number | null;
+  endpointId: number;
   parentId: number | null;
   content: string; // 삭제 시 서버에서 마스킹 : "삭제된 내용입니다."
   isDeleted: boolean;
   author: PublicUser;
+  isAiGenerated: boolean; // 작성자가 전역 AI 계정이면 true
   createdAt: string; // 프론트에 내려줄 값이라 string으로 처리합니다.
   updatedAt: string; // 프론트에 내려줄 값이라 string으로 처리합니다.
   reactions: ReactionSummary[];
@@ -543,8 +547,7 @@ type CommentTree = CommentView & { replies: CommentView[] };
 
 // AI가 요약해야 하는 대상을 모을 때 쓰는 타입.
 // 아래 타입을 배열로 만들어서 넘기면 됩니다.
-// 서버 내부 타입 (HTTP 응답 아님). generateSummary() 입력용이므로 createAt 의 타입을 Date로 유지.
-type SummaryInput = { author: string; content: string; createdAt: Date };
+type SummaryInput = { author: string; content: string; createdAt: string };
 
 // 알림 조회 뷰: 프론트에서 클릭 시 해당 댓글로 이동/하일라이트 될 때 쓸 파생필드 포함
 type NotificationView = {
@@ -596,6 +599,7 @@ type CreateReactionDto = { type: REACTION_TYPE };
 type CreateNotificationDto = {
   recipientId: number;
   type: NOTIFICATION_TYPE;
+  senderId: number; // 알림을 발생시킨 사람 (누가 멘션/초대했는지)
   mentionedCommentId?: number;
   invitedProjectId?: number;
 };

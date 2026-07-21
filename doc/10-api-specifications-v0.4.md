@@ -5,6 +5,7 @@
 | v0.1 | 2026.07.09 THU 11:13 | 백엔드 기능 정의서 v0.2 / Prisma Schema v0.3 / 개요 v0.3 / 유즈케이스 v0.4 / 기능요구사항 v0.6. `@ProjectScope`·`@ProjectRole` 3계층 가드 반영. 댓글 수정/삭제 라우트에서 본인의 댓글인지 확인하는 기능은 계층 3 + `assertAuthor` 이중으로 검사하는 것으로 반영.                                                                                                                                                                   |
 | v0.2 | 2026.07.13 MON 11:10 | 공통 에러 표에 409 Conflict 추가, 멤버 초대/제거 Errors 명시(초대 404·409, 제거 404·409 비활성·409 Owner), 알림 읽음 처리 404 명시(리소스 은닉 — 없는 알림과 타인의 알림 동일 응답), SummaryInput은 서버 내부 타입이므로 createdAt을 Date로 정정, 댓글/대댓글 작성에 멘션 대상 검증 및 400 에러 명시(댓글 생성 전 검증 — 비트랜잭션 구조 유지), moveThread의 403(다른 프로젝트 엔드포인트)을 400으로 통합(리소스 은닉 원칙 일관성) |
 | v0.3 | 2026.07.16 THU 01:10 | 0-8 삭제된 프로젝트 404 케이스 추가, CommentView.endpointId non-null 정정                                                                                                                                                                                                                                                                                                                                                          |
+| v0.4 | 2026.07.21 TUE 00:00 | CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string. 댓글/대댓글/수정 Errors에 content 누락·공백 400 추가, 대댓글에 AI 요약 답글 불가 400 추가, 수정에 멘션 400 추가(content 수정 시 멘션 재동기화). summarizeThread 요약 표 시그니처 (endpointId, projectId)로 정정. GET /users/search에 AI 계정 제외 명시.                                                                                                    |
 
 > **표기 주의**
 >
@@ -143,6 +144,7 @@ type PublicUser = { id: number; userName: string; email: string };
 - 권한: `Auth`
 - Query: `email: string` (완전일치)
 - Response `200`: `PublicUser | null`
+- 비고: AI 계정(`isAi=true`)은 초대 대상이 아니므로 검색에서 제외 (일치해도 `null` 반환)
 
 ---
 
@@ -325,6 +327,7 @@ type CommentView = {
   content: string;
   isDeleted: boolean;
   author: PublicUser;
+  isAiGenerated: boolean; // 작성자가 전역 AI 계정이면 true
   createdAt: string;
   updatedAt: string;
   reactions: ReactionSummary[];
@@ -337,8 +340,7 @@ type CommentTree = CommentView & { replies: CommentView[] };
 
 // AI가 요약해야 하는 대상을 모을 때 쓰는 타입.
 // 아래 타입을 배열로 만들어서 넘기면 됩니다.
-// 서버 내부 타입 (HTTP 응답 아님). generateSummary() 입력용. 그래서 createdAt 타입을 Date로 유지
-type SummaryInput = { author: string; content: string; createdAt: Date };
+type SummaryInput = { author: string; content: string; createdAt: string };
 ```
 
 ### `GET /api/endpoints/:id/comments` — 댓글 목록
@@ -354,6 +356,7 @@ type SummaryInput = { author: string; content: string; createdAt: Date };
 - 처리: 멘션 대상 검증 → `parentId = null` 댓글 생성 + 멘션 동기화(비트랜잭션) + `MENTIONED` 알림
 - Response `201`: `Comment`
 - Errors:
+  - `400` content 누락 또는 공백 (trim 후 빈 문자열)
   - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
   - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
 
@@ -364,6 +367,8 @@ type SummaryInput = { author: string; content: string; createdAt: Date };
 - 처리: 멘션 대상 검증 → `normalizeReply()`로 parentId를 최상위로 정규화(2뎁스 고정) + 부모 endpointId 상속
 - Response `201`: `Comment`
 - Errors:
+  - `400` content 누락 또는 공백 (trim 후 빈 문자열)
+  - `400` AI 요약 댓글에는 답글을 달 수 없음 (부모가 전역 AI 계정)
   - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
   - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
 
@@ -371,8 +376,13 @@ type SummaryInput = { author: string; content: string; createdAt: Date };
 
 - 권한: `Member` (계층 3 : `@ProjectScope('comment')`) + 서비스에서 작성자 본인 검증 (`assertAuthor`)
 - Request: `UpdateCommentDto` (`CreateCommentDto`와 같은데, 형식상 분리)
+- 처리: 작성자 본인 검증 → content 수정 + 멘션 재동기화(content 변경 시 멘션도 바뀌므로 전량 교체, 신규 추가분에만 알림)
 - Response `200`: `Comment`
-- Errors: `404` 구성원 아님(가드) / `403` 작성자 아님(assertAuthor) — 0-8 참고
+- Errors:
+  - `400` content 누락 또는 공백 (trim 후 빈 문자열)
+  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
+  - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
+  - `404` 구성원 아님(가드) / `403` 작성자 아님(assertAuthor) — 0-8 참고
 
 ### `DELETE /api/comments/:id` — 댓글 삭제
 
