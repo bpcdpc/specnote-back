@@ -15,6 +15,7 @@ export type CommentView = {
   content: string;
   isDeleted: boolean;
   author: PublicUser;
+  isAiGenerated: boolean;
   createdAt: string;
   updatedAt: string;
   reactions: ReactionSummary[];
