@@ -13,7 +13,7 @@ export class AuthService {
   ) {}
 
   // 로그인 서비스
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto): Promise<{ access_token: string }> {
     // 이메일로 사용자 조회
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },

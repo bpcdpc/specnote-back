@@ -10,7 +10,7 @@ export type ReactionSummary = {
 // 조회 뷰(findComments 전용). 삭제 댓글의 content 는 서버에서 마스킹.
 export type CommentView = {
   id: number;
-  endpointId: number | null;
+  endpointId: number;
   parentId: number | null;
   content: string;
   isDeleted: boolean;
