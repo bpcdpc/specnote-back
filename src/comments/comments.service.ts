@@ -1,11 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { Comment } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Comment, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
-import type { CommentTree, ReactionSummary, ReplyParent } from './comments.type';
+import type { CommentTree, CommentView, ReactionSummary, ReplyParent } from './comments.type';
+
+const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
 
 @Injectable()
 export class CommentsService {
@@ -35,16 +37,18 @@ export class CommentsService {
             id: true,
             userName: true,
             email: true,
+            isAi: true,
           },
         },
         replies: {
           include: {
-            replies: true, // 2. 대댓글 조회 
+            //replies: true, // 2. 대댓글 조회 
             user: {
               select: {
                 id: true,
                 userName: true,
                 email: true,
+                isAi: true,
               },
             },
             memberMentions: {
@@ -105,18 +109,26 @@ export class CommentsService {
     });
 
     // 3. 리턴타입(CommentTree) 적용하여 리턴
-    return comments.map((comment) => this.createCommentTree(userId, comment));
+    return comments.map((comment) => this.toCommentTree(userId, comment));
    
   }
 
-  // 댓글 포멧 생성
-  private createCommentTree(curUserId: number, raw: any): CommentTree {
+  //댓글 포멧(CommentTree) 적용 - 최상위 전용: CommentView + replies
+  private toCommentTree(curUserId: number, raw: any): CommentTree {
+    return {
+      ...(this.toCommentView(curUserId, raw)), 
+      replies: (raw.replies??[]).map((reply: any) => this.toCommentView(curUserId, reply)),
+    };
+  }
+
+  //댓글, 대댓글 포멧(CommentView) 적용 - 공통필드
+  private toCommentView(curUserId: number, raw: any): CommentView {
     return {
       id: raw.id,
       endpointId: raw.endpointId,
       parentId: raw.parentId,
       // 삭제된 댓글인 경우 내용 처리 블라인드
-      content: raw.isDeleted ? '삭제된 댓글입니다.' : raw.content,
+      content: raw.isDeleted ? DELETED_COMMENT_TEXT : raw.content,
       isDeleted: raw.isDeleted,
       
       // PublicUser 정보 매핑
@@ -125,7 +137,8 @@ export class CommentsService {
         userName: raw.user.userName,
         email: raw.user.email
       },
-      
+      isAiGenerated: raw.user.isAi,
+
       createdAt: raw.createdAt.toISOString(),
       updatedAt: raw.updatedAt.toISOString(),
 
@@ -144,16 +157,13 @@ export class CommentsService {
         path: e.endpoint.path,
         method: e.endpoint.method,
       })),
-
-      // 대댓글(replies)이 존재하면 재귀 호출하여 트리 구조 완성
-      replies: raw.replies ? raw.replies.map((reply: any) => this.createCommentTree(curUserId, reply)) : [],
     };
   }
 
   //댓글 리액션 리턴타입 생성 
   private summarizeReactions(
     currUserId: number, // 현재 로그인한 유저의 ID.
-    reactions: Record<string, any>[] = []
+    reactions: Reaction[] = []
   ): ReactionSummary[] {
     
     const summaryMap = new Map<string, ReactionSummary>();
@@ -182,7 +192,6 @@ export class CommentsService {
     return Array.from(summaryMap.values());
   }
 
-
   // POST /endpoints/:id/comments — 최상위 댓글
   // projectId 는 @CurrentProjectId 주입값 (가드가 endpoint 테이블을 통해 projectId 역참조해둠).
   // endpoint 를 다시 조회해 projectId 를 얻지 말 것 — 이미 데코레이터로 전달됨.
@@ -198,89 +207,89 @@ export class CommentsService {
     // 2. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
     // 3. mentionsService.syncMemberMentions(commentId, projectId, ...) /
     //    syncEndpointMentions(commentId, projectId, ...) 호출
-    if (!dto.content || dto.content.trim().length === 0){
-      throw new BadRequestException('내용을 입력하세요.');
-    }  
 
-    //1. 멘션 대상 검증 
-    //프로젝트 멤버인지 체크  
-    if (!(await this.checkMentionUsers(projectId, dto))){
-      throw new BadRequestException('유효하지 않은 멘션 멤버가 있습니다.');
-    }
-    //프로젝트 endpoint인지 체크
-    if (!(await this.checkMentionEndpoints(projectId, dto))){
-      throw new BadRequestException('유효하지 않은 EndPoint가 있습니다.');
-    }
+    //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
 
     //2. 댓글 생성 
     const comment = await this.prisma.comment.create({
       data: {
-        endpointId: endpointId,
-        userId: userId, 
+        endpointId,
+        userId, 
         content: dto.content,
-        projectId: projectId
+        projectId
       }
     });
     
-    // 3. 멘션 사용자 등록 
-    if (dto.mentionedUserIds && dto.mentionedUserIds.length > 0) {
-      await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, dto.mentionedUserIds);
-    }
-    // 3. 멘션 EndPoint 등록 
-    if (dto.mentionedEndpointIds && dto.mentionedEndpointIds.length > 0) {
-      await this.mentionsService.syncEndpointMentions(comment.id, projectId, dto.mentionedEndpointIds);
-    }
-
+    // 3. 멘션 동기화
+    // 멘션 사용자 등록 
+    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
+    // 멘션 EndPoint 등록 
+    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
+    
     return comment;
 
   }
 
-  // 멘션대상 검증 (멤버십)
-  async checkMentionUsers(projectId: number, dto: CreateCommentDto): Promise<Boolean> {
-    if (dto.mentionedUserIds && dto.mentionedUserIds.length > 0) {
-      // 프로젝트 멤버 필터 조회 
-      const existingMembers = await this.prisma.membership.findMany({
-        where: {
-          id: {
-            in: dto.mentionedUserIds,
-          },
-          projectId: projectId,
-          isDeleted: false,
-        },
-        select: {
-          id: true,
-        },
-      });
-      
-      if (existingMembers.length !== dto.mentionedUserIds.length)
-        return false;
+  // 멘션 대상 정규화(중복 제거) + 검증. 유효하지 않으면 400.
+  // createComment / createReply / updateComment 공용.
+  private async resolveMentions(
+    projectId: number, 
+    dto: Pick<CreateCommentDto, 'mentionedUserIds' | 'mentionedEndpointIds'>
+  ): Promise<{ mentionedUserIds: number[];  mentionedEndpointIds: number[] }> {
+    const userIds = [...new Set(dto.mentionedUserIds ?? [])];
+    const endpointIds = [...new Set(dto.mentionedEndpointIds ?? [])];
+
+    if (!(await this.checkMentionUsers(projectId, userIds))) {
+      throw new BadRequestException(`유효하지 않은 멘션 멤버가 있습니다.`);
+    }
+    if (!(await this.checkMentionEndpoints(projectId, endpointIds))) {
+      throw new BadRequestException(`유효하지 않은 EndPoint가 있습니다.`);
     }
 
-    return true;
+    return { mentionedUserIds: userIds, mentionedEndpointIds: endpointIds };
+  }
+    
+  // 멘션 대상 검증 (멤버십) — 정규화된 id 배열만 받는다
+  private async checkMentionUsers(projectId: number, userIds: number[]): Promise<boolean> {
+    if (userIds.length === 0) return true;
+
+    // 프로젝트 멤버 필터 조회 
+    const existing = await this.prisma.membership.findMany({
+      where: {
+        userId: {
+          in: userIds,
+        },
+        projectId,
+        isDeleted: false,
+      },
+      select: {
+        id: true,
+      },
+    });
+    
+    return existing.length === userIds.length;
   }
 
   // 멘션대상 검증 (EndPoint)
-  async checkMentionEndpoints(projectId: number, dto: CreateCommentDto): Promise<Boolean> {
-    if (dto.mentionedEndpointIds && dto.mentionedEndpointIds.length > 0) {
-      // 프로젝트 EndPoint 필터 조회 
-      const existingEndpoints = await this.prisma.endpoint.findMany({
-        where: {
-          id: {
-            in: dto.mentionedEndpointIds,
-          },
-          projectId: projectId,
-          isDeleted: false,
-        },
-        select: {
-          id: true,
-        },
-      });
+  async checkMentionEndpoints(projectId: number, endpointIds: number[]): Promise<boolean> {
+    if (endpointIds.length === 0) return true;
 
-      if (existingEndpoints.length !== dto.mentionedEndpointIds.length) 
-        return false;
-    }
+    // 프로젝트 EndPoint 필터 조회 
+    const existing = await this.prisma.endpoint.findMany({
+      where: {
+        id: {
+          in: endpointIds,
+        },
+        projectId,
+        isDeleted: false,
+      },
+      select: {
+        id: true,
+      },
+    });
 
-    return true;
+    return existing.length === endpointIds.length;
   }
 
   // POST /comments/:id/replies — 대댓글

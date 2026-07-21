@@ -1,7 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
@@ -10,7 +12,8 @@ import {
 export class CreateCommentDto {
   @ApiProperty({ example: '이 응답 스키마 확인 부탁해요' })
   @IsString()
-  @MinLength(1)
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsNotEmpty({ message: '내용을 입력하세요.' })
   content: string;
 
   @ApiProperty({ required: false, type: [Number], example: [1, 2] })

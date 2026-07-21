@@ -13,37 +13,46 @@ export class MentionsService {
 
   // 같은 프로젝트 멤버 한정 멘션 저장 + MENTIONED 알림
   async syncMemberMentions(
-    userId: number,
+    senderId: number,
     commentId: number,
     projectId: number,
     mentionedUserIds: number[],
   ): Promise<void> {
-    // 프로젝트 멤버인 userId 만 필터 → MemberMention 생성 → 각 대상에게 MENTIONED 알림
-    // this.notificationService.createNotification({type: MENTIONED, ...}) 이런식으로 호출하심 됩니다.
-    const data = mentionedUserIds.map((userId) => ({
-      commentId: commentId,  
-      projectId: projectId,
-      mentionedUserId: userId, 
-    }));
-
-    // 멤버 멘션 저장
-    await this.prisma.memberMention.createMany({
-      data: data,
-      skipDuplicates: true, 
+    // 기존 멘션 조회 (알림 diff 용)
+    const existing = await this.prisma.memberMention.findMany({
+      where: { commentId },
+      select: { mentionedUserId: true },
     });
+    //기존 멘션 user
+    const before = new Set(existing.map((m) => m.mentionedUserId));
+    //신규 추가분
+    const added = mentionedUserIds.filter((id) => !before.has(id));
 
-    //초대 알림 생성
-    await mentionedUserIds.map((notiId) => {
-      this.notificationService.createNotification({
-        recipientId: notiId, 
-        type: NOTIFICATION_TYPE.MENTIONED,
-        senderId: userId,  
-        mentionedCommentId: commentId
-      })
-    })
-  
+    // (delete + create 원자성 보장)
+    await this.prisma.$transaction([
+      this.prisma.memberMention.deleteMany({ where: { commentId }}),
+      this.prisma.memberMention.createMany({
+        data: mentionedUserIds.map((mentionedUserId) => ({
+          commentId,
+          mentionedUserId,
+          projectId,
+        }))
+      }),
+    ]);
+
+    // 신규 추가분에만 알림 
+    await Promise.all (
+      added.map((recipientId) =>
+        this.notificationService.createNotification({
+          recipientId, 
+          type: NOTIFICATION_TYPE.MENTIONED,
+          senderId,  
+          mentionedCommentId: commentId
+        }),
+      ),
+    );
+
   }
-
 
   // 같은 프로젝트 엔드포인트 한정 멘션 저장
   async syncEndpointMentions(
@@ -51,18 +60,17 @@ export class MentionsService {
     projectId: number,
     mentionedEndpointIds: number[],
   ): Promise<void> {
-    // 프로젝트 소속 endpointId 만 필터 → EndpointMention 생성
-    // this.notificationService.createNotification({type: INVITED, ...}) 이런식으로 호출하심 됩니다.
-    const data = mentionedEndpointIds.map((endpointId) => ({
-      commentId: commentId,  
-      projectId: projectId,
-      endpointId: endpointId, 
-    }));
-
-    // endpoint 멘션 저장
-    await this.prisma.endpointMention.createMany({
-      data: data,
-      skipDuplicates: true, 
-    });
+    // (delete + create 원자성 보장)
+    await this.prisma.$transaction([
+      this.prisma.endpointMention.deleteMany({ where: { commentId }}),
+      this.prisma.endpointMention.createMany({
+        data: mentionedEndpointIds.map((endpointId) => ({
+          commentId,
+          endpointId,
+          projectId,
+        }))
+      })
+    ]);
   }
+
 }
