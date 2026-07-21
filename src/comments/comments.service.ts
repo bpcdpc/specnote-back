@@ -272,7 +272,7 @@ export class CommentsService {
   }
 
   // 멘션대상 검증 (EndPoint)
-  async checkMentionEndpoints(projectId: number, endpointIds: number[]): Promise<boolean> {
+  private async checkMentionEndpoints(projectId: number, endpointIds: number[]): Promise<boolean> {
     if (endpointIds.length === 0) return true;
 
     // 프로젝트 EndPoint 필터 조회 
