@@ -350,19 +350,19 @@ export class CommentsService {
       throw new BadRequestException(`이미 삭제된 댓글입니다.`);
     }
 
-    //1. 멘션 대상 정규화 + 검증  
-    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(orgn.projectId, dto);
-
-    //작성자 체크 
+    //1. 작성자 체크 
     this.assertAuthor(orgn, userId);
 
-    //2. 댓글 수정 (content)
+    //2. 멘션 대상 정규화 + 검증  
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(orgn.projectId, dto);
+
+    //3. 댓글 수정 (content)
     const comment = await this.prisma.comment.update({
       where: { id: commentId },
       data: { content: dto.content}
     });
 
-    //3. 멘션 동기화
+    //4. 멘션 동기화
     //멘션 사용자 동기화
     await this.mentionsService.syncMemberMentions(userId, comment.id, comment.projectId, mentionedUserIds);
     //멘션 EndPoint 동기화
@@ -382,7 +382,7 @@ export class CommentsService {
       throw new BadRequestException(`이미 삭제된 댓글입니다.`);
     }
 
-    //작성자 체크 
+    //1. 작성자 체크 
     this.assertAuthor(orgn, userId);
 
     //2. 댓글 삭제 (isDeleted = true)
@@ -426,26 +426,31 @@ export class CommentsService {
     const replyParent = await this.prisma.comment.findUnique({
       where: { id: parentId },
       include: {
-        parent: true,
+        parent: { include: { user: { select: { isAi: true } } } },
+        user: { select: { isAi: true }},
       },
     });
 
     if (!replyParent) {
       throw new NotFoundException(`댓글(ID: ${parentId})을 찾을 수 없습니다.`);
     }
+
+    // 최상위로 승격될 실제 부모 (둘중 하나 넣어줌)
+    const top = replyParent.parent ?? replyParent;
+    // top이 최상위가 아닐 경우 error 발생
+    if (top.parentId !== null) {
+      throw new BadRequestException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
+    }
     
-    // parentId의 부모댓글이 있으면 부모댓글 정보 리턴
-    if (replyParent.parent) {
-      return {
-        parentId: replyParent.parent.id,
-        endpointId: replyParent.parent.endpointId,
-      }
-    };
+    // AI 요약 댓글에는 답글 불가
+    if (top.user.isAi) {
+      throw new BadRequestException('AI 요약에는 답글을 달 수 없습니다.');
+    }
 
     // parentId의 정보 리턴
     return {
-      parentId: replyParent.id,
-      endpointId: replyParent.endpointId
+      parentId: top.id,
+      endpointId: top.endpointId
     };
   }
 }
