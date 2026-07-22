@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Comment, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
@@ -301,7 +301,6 @@ export class CommentsService {
     projectId: number,
     dto: CreateCommentDto,
   ): Promise<Comment> {
-    // TODO
     // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400, createComment 와 동일)
     //    - mentionedUserIds: 해당 프로젝트 멤버인지 (projectId 사용)
     //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지 (projectId 사용)
@@ -309,7 +308,31 @@ export class CommentsService {
     // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
     // 4. mentionsService.syncMemberMentions(commentId, projectId, ...) /
     //    syncEndpointMentions(commentId, projectId, ...) 호출
-    throw new Error('not implemented');
+    
+    //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
+
+    //parentId 정규화
+    const replyParent = await this.normalizeReply(parentId);
+
+    //2. 대댓글 생성 
+    const comment = await this.prisma.comment.create({
+      data: {
+        endpointId: replyParent.endpointId,
+        userId, 
+        content: dto.content,
+        parentId: replyParent.parentId,
+        projectId,
+      }
+    });
+    
+    //3.멘션 동기화
+    // 멘션 사용자 등록 
+    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
+    // 멘션 EndPoint 등록 
+    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
+    
+    return comment;
   }
 
   // PATCH /comments/:id — 수정 (작성자 본인, content 만)
@@ -318,14 +341,58 @@ export class CommentsService {
     commentId: number,
     dto: UpdateCommentDto,
   ): Promise<Comment> {
-    // TODO: 댓글 조회 → assertAuthor(comment, userId) → content update
-    throw new Error('not implemented');
+    // 댓글 조회 → assertAuthor(comment, userId) → content update
+    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+
+    //1. 작성자 체크 
+    this.assertAuthor(orgn, userId);
+
+    //2. 멘션 대상 정규화 + 검증  
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(orgn.projectId, dto);
+
+    //3. 댓글 수정 (content)
+    const comment = await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { content: dto.content}
+    });
+
+    //4. 멘션 동기화
+    //멘션 사용자 동기화
+    await this.mentionsService.syncMemberMentions(userId, comment.id, comment.projectId, mentionedUserIds);
+    //멘션 EndPoint 동기화
+    await this.mentionsService.syncEndpointMentions(comment.id, comment.projectId, mentionedEndpointIds);
+    
+    return comment;
   }
 
   // DELETE /comments/:id — 소프트 삭제 (작성자 본인)
   async softDeleteComment(userId: number, commentId: number): Promise<Comment> {
-    // TODO: 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
-    throw new Error('not implemented');
+    // 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
+    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+
+    //1. 작성자 체크 
+    this.assertAuthor(orgn, userId);
+
+    //2. 댓글 삭제 (isDeleted = true)
+    const comment = await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { isDeleted: true}
+    });
+
+    comment.content = DELETED_COMMENT_TEXT;
+    return comment;
   }
 
   // PATCH /comments/:id/move — 스레드 이동 [Owner]
@@ -348,13 +415,42 @@ export class CommentsService {
 
   // update/softDelete 공용: 작성자 본인 아니면 403
   private assertAuthor(comment: Comment, userId: number): void {
-    // TODO: comment.userId !== userId 면 ForbiddenException
-    throw new Error('not implemented');
+    // comment.userId !== userId 면 ForbiddenException
+    if (comment.userId !== userId) 
+      throw new ForbiddenException(`다른 사람의 댓글은 수정하거나 삭제할 수 없습니다.`);
   }
 
   // parentId 정규화: 넘어온 게 대댓글이면 그 부모(최상위)로 승격 + endpointId 상속 (FR-6.2)
   private async normalizeReply(parentId: number): Promise<ReplyParent> {
-    // TODO: parent 조회 → parent.parentId 있으면 그 값으로 승격, endpointId 함께 반환
-    throw new Error('not implemented');
+    // parent 조회 → parent.parentId 있으면 그 값으로 승격, endpointId 함께 반환
+    const replyParent = await this.prisma.comment.findUnique({
+      where: { id: parentId },
+      include: {
+        parent: { include: { user: { select: { isAi: true } } } },
+        user: { select: { isAi: true }},
+      },
+    });
+
+    if (!replyParent) {
+      throw new NotFoundException(`댓글(ID: ${parentId})을 찾을 수 없습니다.`);
+    }
+
+    // 최상위로 승격될 실제 부모 (둘중 하나 넣어줌)
+    const top = replyParent.parent ?? replyParent;
+    // top이 최상위가 아닐 경우 error 발생
+    if (top.parentId !== null) {
+      throw new InternalServerErrorException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
+    }
+    
+    // AI 요약 댓글에는 답글 불가
+    if (top.user.isAi) {
+      throw new BadRequestException('AI 요약에는 답글을 달 수 없습니다.');
+    }
+
+    // parentId의 정보 리턴
+    return {
+      parentId: top.id,
+      endpointId: top.endpointId
+    };
   }
 }
