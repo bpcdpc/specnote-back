@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Comment, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
@@ -439,7 +439,7 @@ export class CommentsService {
     const top = replyParent.parent ?? replyParent;
     // top이 최상위가 아닐 경우 error 발생
     if (top.parentId !== null) {
-      throw new BadRequestException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
+      throw new InternalServerErrorException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
     }
     
     // AI 요약 댓글에는 답글 불가
