@@ -399,7 +399,6 @@ export class CommentsService {
   // OWNER 검증은 가드(@ProjectRole(OWNER))가 이미 수행 → ownerId 인자 불필요.
   // projectId 도 주입받지 않음 — 아래 comment 조회(parentId 판정용)에서 함께 확보한다.
   async moveThread(commentId: number, dto: MoveCommentDto): Promise<void> {
-    // TODO
     // [tx 밖 선검증]
     //  1. comment 조회 (parentId, projectId 확보 — select 로 함께 뽑음).
     //     parentId != null 이면 거부 (최상위만 이동 → 400)
@@ -410,7 +409,45 @@ export class CommentsService {
     //     endpointId 열거가 가능 → 리소스 은닉을 위해 400 통일
     // [tx]
     //  3. 최상위 + 대댓글 endpointId 를 targetEndpointId 로 일괄 갱신
-    throw new Error('not implemented');
+    
+    // 1. comment 조회
+    const orgnComment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true, endpointId: true, projectId: true, parentId: true, isDeleted: true}
+    });
+    if (!orgnComment) {
+      throw new BadRequestException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgnComment.parentId !== null) {
+      throw new BadRequestException(`최상위 댓글만 선택가능합니다.`);
+    }
+    if (orgnComment.endpointId === null || orgnComment.projectId === null) {
+      throw new InternalServerErrorException(`댓글의 프로젝트, Endpoint를 확인하세요`);
+    }
+
+    // 2.targetEndpoint 조회 
+    const orgnEndpoint = await this.prisma.endpoint.findUnique({
+      where: { id: dto.targetEndpointId }
+    });
+    if (!orgnEndpoint || orgnEndpoint.isDeleted) {
+      throw new BadRequestException(`EndPoint(ID: ${dto.targetEndpointId})를 찾을 수 없습니다.`);
+    }
+    if (orgnComment.projectId !== orgnEndpoint.projectId) {
+      throw new BadRequestException(`동일 프로젝트로 내에서만 가능합니다.`);
+    }
+
+    // 댓글 EndPoint update
+    await this.prisma.comment.updateMany({
+      where: 
+      { 
+        endpointId: orgnComment.endpointId, 
+        projectId: orgnComment.projectId
+      },
+      data: {
+        endpointId: dto.targetEndpointId
+      }
+    });
+
   }
 
   // update/softDelete 공용: 작성자 본인 아니면 403
