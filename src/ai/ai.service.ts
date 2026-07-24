@@ -13,7 +13,7 @@ export class AiService {
     const deploymentName = process.env.AZURE_AI_DEPLOYMENT_NAME;
 
     if (!endpoint || !apiKey || !deploymentName) {
-      throw new NotFoundException('Azure AI Foundry 환경변수가 설정되지 않았습니다.');
+      throw new InternalServerErrorException('Azure AI Foundry 환경변수가 설정되지 않았습니다.');
     }
 
     this.endpoint = endpoint;
@@ -49,12 +49,12 @@ export class AiService {
     });
     if(!response.ok){
       const errorBody = await response.text();
-      throw new NotFoundException(`Azure AI Foundry 호출 실패: ${response.status} ${errorBody}`);
+      throw new InternalServerErrorException(`Azure AI Foundry 호출 실패: ${response.status} ${errorBody}`);
     }
     const data = await response.json();
     const summary = data.choices?.[0]?.message?.content;
     if(!summary){
-      throw new NotFoundException('요약 결과를 받지 못했습니다.');
+      throw new InternalServerErrorException('요약 결과를 받지 못했습니다.');
     }
     return summary.trim();
   }

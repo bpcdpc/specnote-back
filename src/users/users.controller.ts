@@ -29,7 +29,7 @@ export class UsersController {
 
   // GET /api/users/me
   @ApiOperation({ summary: '회원 정보 받아오기' })
-   @ApiBearerAuth()
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('me')
   findMe(@CurrentUser() user: AuthUser):Promise<PublicUser|null>{

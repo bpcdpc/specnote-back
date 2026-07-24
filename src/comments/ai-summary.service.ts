@@ -13,8 +13,8 @@ export class AiSummaryService {
 
   // POST /endpoints/:id/ai-summary
   async summarizeThread(
-    actorUserId: number,
     endpointId: number,
+    projectId: number,
   ): Promise<Comment> {
     // TODO
     // 1. 해당 endpoint 의 미삭제 댓글 수집 → SummaryInput[] (없으면 BadRequest: 요약할 댓글 없음)
@@ -53,20 +53,10 @@ export class AiSummaryService {
       throw new BadRequestException('요약 생성에 실패했습니다.');
     }
 
-
-    const project = await this.prisma.endpoint.findUnique({
-      where:{id:endpointId},
-      select:{projectId:true},
-    })
-
-    if(!project)
-    {
-      throw new NotFoundException('엔드포인트를 찾을 수 없습니다.');
-    }
     const summaryContent = await this.prisma.comment.create({
       data:{
         endpointId,
-        projectId:comments[0].projectId,
+        projectId: projectId,
         userId: aiUser.id,
         content:summaryText,
         parentId:null
