@@ -11,11 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ROLE } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipGuard } from '../common/guards/membership.guard';
 import { ProjectScope } from '../common/decorators/project-scope.decorator';
-import { ProjectRole } from '../common/decorators/project-role.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { type AuthUser } from '../common/types/auth.type';
 import { CommentsService } from './comments.service';
@@ -23,7 +21,6 @@ import { ReactionsService } from './reactions.service';
 import { AiSummaryService } from './ai-summary.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
-import { MoveCommentDto } from './dto/move-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
 
@@ -116,17 +113,6 @@ export class CommentsController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.commentsService.softDeleteComment(user.id, id);
-  }
-
-  @ApiOperation({ summary: '[Owner] 스레드 이동' })
-  @ProjectScope('comment')
-  @ProjectRole(ROLE.OWNER)
-  @Patch('comments/:id/move')
-  moveThread(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: MoveCommentDto,
-  ) {
-    return this.commentsService.moveThread(id, dto);
   }
 
   @ApiOperation({ summary: '리액션 토글' })

@@ -18,5 +18,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     AiSummaryService,
     MembershipGuard, // 계층 3 가드 (projects/endpoints 에 이어 3번째 중복 — 아래 참고)
   ],
+  exports: [CommentsService],
 })
 export class CommentsModule {}
