@@ -395,59 +395,25 @@ export class CommentsService {
     return comment;
   }
 
-  // PATCH /comments/:id/move — 스레드 이동 [Owner]
+  // PATCH :id/comments/move — 엔드포인트 댓글 일괄 이동
   // OWNER 검증은 가드(@ProjectRole(OWNER))가 이미 수행 → ownerId 인자 불필요.
   // projectId 도 주입받지 않음 — 아래 comment 조회(parentId 판정용)에서 함께 확보한다.
-  async moveThread(commentId: number, dto: MoveCommentDto): Promise<void> {
-    // [tx 밖 선검증]
-    //  1. comment 조회 (parentId, projectId 확보 — select 로 함께 뽑음).
-    //     parentId != null 이면 거부 (최상위만 이동 → 400)
-    //  2. targetEndpoint 조회 — 아래 셋 모두 BadRequest(400) 로 통일
-    //     - 없거나 isDeleted
-    //     - projectId !== comment.projectId (다른 프로젝트 소속)
-    //     세 경우를 400 하나로 뭉개는 이유: 400/404 로 구분하면
-    //     endpointId 열거가 가능 → 리소스 은닉을 위해 400 통일
-    // [tx]
-    //  3. 최상위 + 대댓글 endpointId 를 targetEndpointId 로 일괄 갱신
-    
-    // 1. comment 조회
-    const orgnComment = await this.prisma.comment.findUnique({
-      where: { id: commentId },
-      select: { id: true, endpointId: true, projectId: true, parentId: true, isDeleted: true}
+  async moveComments(endpointId: number, projectId: number, dto: MoveCommentDto): Promise<void> {
+
+    // 대상 엔드포인트 검증 — 없음/삭제됨/타 프로젝트를 400 하나로 통일 (리소스 은닉)
+    const target = await this.prisma.endpoint.findUnique({
+      where: { id: dto.targetEndpointId },
+      select: { id: true, isDeleted: true, projectId: true }, // 나머지 정보 제거
     });
-    if (!orgnComment) {
-      throw new BadRequestException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
-    }
-    if (orgnComment.parentId !== null) {
-      throw new BadRequestException(`최상위 댓글만 선택가능합니다.`);
-    }
-    if (orgnComment.endpointId === null || orgnComment.projectId === null) {
-      throw new InternalServerErrorException(`댓글의 프로젝트, Endpoint를 확인하세요`);
+    if (!target || target.isDeleted || target.projectId !== projectId) {
+      throw new BadRequestException(`EndPoint(ID: ${dto.targetEndpointId})로 이동할 수 없습니다.`);
     }
 
-    // 2.targetEndpoint 조회 
-    const orgnEndpoint = await this.prisma.endpoint.findUnique({
-      where: { id: dto.targetEndpointId }
-    });
-    if (!orgnEndpoint || orgnEndpoint.isDeleted) {
-      throw new BadRequestException(`EndPoint(ID: ${dto.targetEndpointId})를 찾을 수 없습니다.`);
-    }
-    if (orgnComment.projectId !== orgnEndpoint.projectId) {
-      throw new BadRequestException(`동일 프로젝트로 내에서만 가능합니다.`);
-    }
-
-    // 댓글 EndPoint update
+    // 해당 엔드포인트의 댓글 전량을 대상 엔드포인트로 이동 (최상위 + 대댓글)
     await this.prisma.comment.updateMany({
-      where: 
-      { 
-        endpointId: orgnComment.endpointId, 
-        projectId: orgnComment.projectId
-      },
-      data: {
-        endpointId: dto.targetEndpointId
-      }
+      where: { endpointId, projectId },
+      data: { endpointId: dto.targetEndpointId }
     });
-
   }
 
   // update/softDelete 공용: 작성자 본인 아니면 403
