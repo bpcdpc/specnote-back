@@ -35,15 +35,14 @@ export class UsersService {
 
   // 초대용 이메일 완전일치 검색
   // AI 계정은 검색 대상에서 제외
-  findByEmail(email: string): Promise<PublicUser | null> {
+  findByEmail(email: string): Promise<PublicUser| null> {
     return this.prisma.user.findFirst({
       where: { email, isAi: false },
       select: { id: true, userName: true, email: true },
     });
   }
-
-  // id 조회
-  findById(id: number): Promise<PublicUser | null> {
+  // id로 조회
+  findById(id: number): Promise<PublicUser| null> {
     return this.prisma.user.findUnique({
       where: { id },
       select: { id: true, userName: true, email: true },

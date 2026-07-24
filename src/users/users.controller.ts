@@ -2,8 +2,9 @@ import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UsersService } from './users.service';
-import type { PublicUser } from '../common/types/auth.type';
+import type { AuthUser, PublicUser } from '../common/types/auth.type';
 import { CreateUserDto } from './dto/create-user.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -24,5 +25,14 @@ export class UsersController {
   @Get('search')
   findByEmail(@Query('email') email: string): Promise<PublicUser | null> {
     return this.usersService.findByEmail(email);
+  }
+
+  // GET /api/users/me
+  @ApiOperation({ summary: '회원 정보 받아오기' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  findMe(@CurrentUser() user: AuthUser):Promise<PublicUser|null>{
+    return this.usersService.findById(user.id);
   }
 }
