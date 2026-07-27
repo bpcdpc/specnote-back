@@ -32,7 +32,7 @@ export class UsersController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  findMe(@CurrentUser() user: AuthUser):Promise<PublicUser|null>{
-    return this.usersService.findById(user.id);
+  findMe(@CurrentUser() user: AuthUser): Promise<PublicUser> {
+    return this.usersService.findMe(user.id);
   }
 }

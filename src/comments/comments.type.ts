@@ -1,10 +1,22 @@
 import { REACTION_TYPE } from '@prisma/client';
 import { type PublicUser } from '../common/types/auth.type';
 
+export type UserRef = {
+  userId: number;
+  userName: string;
+};
+
+export type EndpointRef = {
+  endpointId: number;
+  path: string;
+  method: string;
+};
+
 export type ReactionSummary = {
   type: REACTION_TYPE;
   count: number;
   reactedByMe: boolean;
+  users: UserRef[];
 };
 
 // 조회 뷰(findComments 전용). 삭제 댓글의 content 는 서버에서 마스킹.
@@ -19,8 +31,8 @@ export type CommentView = {
   createdAt: string;
   updatedAt: string;
   reactions: ReactionSummary[];
-  memberMentions: { userId: number; userName: string }[];
-  endpointMentions: { endpointId: number; path: string; method: string }[];
+  memberMentions: UserRef[];
+  endpointMentions: EndpointRef[];
 };
 
 // 댓글 + 대댓글 한 세트 (2뎁스 고정)

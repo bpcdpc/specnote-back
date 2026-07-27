@@ -1,4 +1,5 @@
 import { ROLE } from '@prisma/client';
+import { PublicUser } from '../common/types/auth.type';
 
 export type ProjectSummary = {
   id: number;
@@ -18,6 +19,13 @@ export type EndpointSummary = {
   summary: string | null;
   tags: string[];
   isDeleted: boolean;
+};
+
+// 멤버 목록 응답
+// id, projectId, isDeleted, createdAt 이 프론트에서 쓰이지 않고, projectId 는 URL 이 이미 갖고 있다.
+export type MemberView = {
+  user: PublicUser;
+  role: ROLE;
 };
 
 // 프로젝트 진입 응답

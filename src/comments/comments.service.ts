@@ -1,11 +1,23 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { Comment, Reaction } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Comment, Reaction, REACTION_TYPE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
-import type { CommentTree, CommentView, ReactionSummary, ReplyParent } from './comments.type';
+import type {
+  CommentTree,
+  CommentView,
+  ReactionSummary,
+  ReplyParent,
+  UserRef,
+} from './comments.type';
 
 const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
 
@@ -42,7 +54,7 @@ export class CommentsService {
         },
         replies: {
           include: {
-            //replies: true, // 2. 대댓글 조회 
+            //replies: true, // 2. 대댓글 조회
             user: {
               select: {
                 id: true,
@@ -73,10 +85,12 @@ export class CommentsService {
                 },
               },
             },
-            reactions: true, 
+            reactions: {
+              include: { user: { select: { userName: true } } },
+            },
           },
           orderBy: {
-            createdAt: 'asc', 
+            createdAt: 'asc',
           },
         },
         memberMentions: {
@@ -94,30 +108,33 @@ export class CommentsService {
           include: {
             endpoint: {
               select: {
-                  id: true,
-                  path: true,
-                  method: true,
-                },
+                id: true,
+                path: true,
+                method: true,
+              },
             },
           },
         },
-        reactions: true,
+        reactions: {
+          include: { user: { select: { userName: true } } },
+        },
       },
       orderBy: {
-        createdAt: 'asc', 
+        createdAt: 'asc',
       },
     });
 
     // 3. 리턴타입(CommentTree) 적용하여 리턴
     return comments.map((comment) => this.toCommentTree(userId, comment));
-   
   }
 
   //댓글 포멧(CommentTree) 적용 - 최상위 전용: CommentView + replies
   private toCommentTree(curUserId: number, raw: any): CommentTree {
     return {
-      ...(this.toCommentView(curUserId, raw)), 
-      replies: (raw.replies??[]).map((reply: any) => this.toCommentView(curUserId, reply)),
+      ...this.toCommentView(curUserId, raw),
+      replies: (raw.replies ?? []).map((reply: any) =>
+        this.toCommentView(curUserId, reply),
+      ),
     };
   }
 
@@ -130,12 +147,12 @@ export class CommentsService {
       // 삭제된 댓글인 경우 내용 처리 블라인드
       content: raw.isDeleted ? DELETED_COMMENT_TEXT : raw.content,
       isDeleted: raw.isDeleted,
-      
+
       // PublicUser 정보 매핑
       author: {
         id: raw.user.id,
         userName: raw.user.userName,
-        email: raw.user.email
+        email: raw.user.email,
       },
       isAiGenerated: raw.user.isAi,
 
@@ -160,32 +177,31 @@ export class CommentsService {
     };
   }
 
-  //댓글 리액션 리턴타입 생성 
+  //댓글 리액션 리턴타입 생성
   private summarizeReactions(
-    currUserId: number, // 현재 로그인한 유저의 ID.
-    reactions: Reaction[] = []
+    currUserId: number,
+    reactions: (Reaction & { user: { userName: string } })[] = [],
   ): ReactionSummary[] {
-    
-    const summaryMap = new Map<string, ReactionSummary>();
+    const summaryMap = new Map<REACTION_TYPE, ReactionSummary>();
 
     reactions.forEach((react) => {
-      const reactionType = react.type; // 예: 'DONE', 'CHECKING' 
-      
-      // 1. 이미 등록된 리액션 타입이 없다면 초기값 생성
-      const existing = summaryMap.get(reactionType) || { 
-        type: reactionType, 
-        count: 0, 
-        reactedByMe: false // 기본값은 false
+      const reactionType = react.type;
+      const existing = summaryMap.get(reactionType) || {
+        type: reactionType,
+        count: 0,
+        reactedByMe: false,
+        users: [], // 추가
       };
 
-      // 2. 개수 누적
       existing.count += 1;
+      existing.users.push({
+        userId: react.userId,
+        userName: react.user.userName,
+      });
 
-      // 3. 리액션을 남긴 유저가 현재 로그인한 유저와 일치하는지 확인
       if (react.userId === currUserId) {
         existing.reactedByMe = true;
       }
-
       summaryMap.set(reactionType, existing);
     });
 
@@ -209,34 +225,43 @@ export class CommentsService {
     //    syncEndpointMentions(commentId, projectId, ...) 호출
 
     //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
-    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
+    const { mentionedUserIds, mentionedEndpointIds } =
+      await this.resolveMentions(projectId, dto);
 
-    //2. 댓글 생성 
+    //2. 댓글 생성
     const comment = await this.prisma.comment.create({
       data: {
         endpointId,
-        userId, 
+        userId,
         content: dto.content,
-        projectId
-      }
+        projectId,
+      },
     });
-    
-    // 3. 멘션 동기화
-    // 멘션 사용자 등록 
-    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
-    // 멘션 EndPoint 등록 
-    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
-    
-    return comment;
 
+    // 3. 멘션 동기화
+    // 멘션 사용자 등록
+    await this.mentionsService.syncMemberMentions(
+      userId,
+      comment.id,
+      projectId,
+      mentionedUserIds,
+    );
+    // 멘션 EndPoint 등록
+    await this.mentionsService.syncEndpointMentions(
+      comment.id,
+      projectId,
+      mentionedEndpointIds,
+    );
+
+    return comment;
   }
 
   // 멘션 대상 정규화(중복 제거) + 검증. 유효하지 않으면 400.
   // createComment / createReply / updateComment 공용.
   private async resolveMentions(
-    projectId: number, 
-    dto: Pick<CreateCommentDto, 'mentionedUserIds' | 'mentionedEndpointIds'>
-  ): Promise<{ mentionedUserIds: number[];  mentionedEndpointIds: number[] }> {
+    projectId: number,
+    dto: Pick<CreateCommentDto, 'mentionedUserIds' | 'mentionedEndpointIds'>,
+  ): Promise<{ mentionedUserIds: number[]; mentionedEndpointIds: number[] }> {
     const userIds = [...new Set(dto.mentionedUserIds ?? [])];
     const endpointIds = [...new Set(dto.mentionedEndpointIds ?? [])];
 
@@ -249,12 +274,15 @@ export class CommentsService {
 
     return { mentionedUserIds: userIds, mentionedEndpointIds: endpointIds };
   }
-    
+
   // 멘션 대상 검증 (멤버십) — 정규화된 id 배열만 받는다
-  private async checkMentionUsers(projectId: number, userIds: number[]): Promise<boolean> {
+  private async checkMentionUsers(
+    projectId: number,
+    userIds: number[],
+  ): Promise<boolean> {
     if (userIds.length === 0) return true;
 
-    // 프로젝트 멤버 필터 조회 
+    // 프로젝트 멤버 필터 조회
     const existing = await this.prisma.membership.findMany({
       where: {
         userId: {
@@ -267,15 +295,18 @@ export class CommentsService {
         id: true,
       },
     });
-    
+
     return existing.length === userIds.length;
   }
 
   // 멘션대상 검증 (EndPoint)
-  private async checkMentionEndpoints(projectId: number, endpointIds: number[]): Promise<boolean> {
+  private async checkMentionEndpoints(
+    projectId: number,
+    endpointIds: number[],
+  ): Promise<boolean> {
     if (endpointIds.length === 0) return true;
 
-    // 프로젝트 EndPoint 필터 조회 
+    // 프로젝트 EndPoint 필터 조회
     const existing = await this.prisma.endpoint.findMany({
       where: {
         id: {
@@ -308,30 +339,40 @@ export class CommentsService {
     // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
     // 4. mentionsService.syncMemberMentions(commentId, projectId, ...) /
     //    syncEndpointMentions(commentId, projectId, ...) 호출
-    
+
     //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
-    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
+    const { mentionedUserIds, mentionedEndpointIds } =
+      await this.resolveMentions(projectId, dto);
 
     //parentId 정규화
     const replyParent = await this.normalizeReply(parentId);
 
-    //2. 대댓글 생성 
+    //2. 대댓글 생성
     const comment = await this.prisma.comment.create({
       data: {
         endpointId: replyParent.endpointId,
-        userId, 
+        userId,
         content: dto.content,
         parentId: replyParent.parentId,
         projectId,
-      }
+      },
     });
-    
+
     //3.멘션 동기화
-    // 멘션 사용자 등록 
-    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
-    // 멘션 EndPoint 등록 
-    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
-    
+    // 멘션 사용자 등록
+    await this.mentionsService.syncMemberMentions(
+      userId,
+      comment.id,
+      projectId,
+      mentionedUserIds,
+    );
+    // 멘션 EndPoint 등록
+    await this.mentionsService.syncEndpointMentions(
+      comment.id,
+      projectId,
+      mentionedEndpointIds,
+    );
+
     return comment;
   }
 
@@ -342,7 +383,9 @@ export class CommentsService {
     dto: UpdateCommentDto,
   ): Promise<Comment> {
     // 댓글 조회 → assertAuthor(comment, userId) → content update
-    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    const orgn = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+    });
     if (!orgn) {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
@@ -350,31 +393,43 @@ export class CommentsService {
       throw new BadRequestException(`이미 삭제된 댓글입니다.`);
     }
 
-    //1. 작성자 체크 
+    //1. 작성자 체크
     this.assertAuthor(orgn, userId);
 
-    //2. 멘션 대상 정규화 + 검증  
-    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(orgn.projectId, dto);
+    //2. 멘션 대상 정규화 + 검증
+    const { mentionedUserIds, mentionedEndpointIds } =
+      await this.resolveMentions(orgn.projectId, dto);
 
     //3. 댓글 수정 (content)
     const comment = await this.prisma.comment.update({
       where: { id: commentId },
-      data: { content: dto.content}
+      data: { content: dto.content },
     });
 
     //4. 멘션 동기화
     //멘션 사용자 동기화
-    await this.mentionsService.syncMemberMentions(userId, comment.id, comment.projectId, mentionedUserIds);
+    await this.mentionsService.syncMemberMentions(
+      userId,
+      comment.id,
+      comment.projectId,
+      mentionedUserIds,
+    );
     //멘션 EndPoint 동기화
-    await this.mentionsService.syncEndpointMentions(comment.id, comment.projectId, mentionedEndpointIds);
-    
+    await this.mentionsService.syncEndpointMentions(
+      comment.id,
+      comment.projectId,
+      mentionedEndpointIds,
+    );
+
     return comment;
   }
 
   // DELETE /comments/:id — 소프트 삭제 (작성자 본인)
   async softDeleteComment(userId: number, commentId: number): Promise<Comment> {
     // 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
-    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    const orgn = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+    });
     if (!orgn) {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
@@ -382,13 +437,13 @@ export class CommentsService {
       throw new BadRequestException(`이미 삭제된 댓글입니다.`);
     }
 
-    //1. 작성자 체크 
+    //1. 작성자 체크
     this.assertAuthor(orgn, userId);
 
     //2. 댓글 삭제 (isDeleted = true)
     const comment = await this.prisma.comment.update({
       where: { id: commentId },
-      data: { isDeleted: true}
+      data: { isDeleted: true },
     });
 
     comment.content = DELETED_COMMENT_TEXT;
@@ -397,30 +452,36 @@ export class CommentsService {
 
   // PATCH :id/comments/move — 엔드포인트 댓글 일괄 이동
   // OWNER 검증은 가드(@ProjectRole(OWNER))가 이미 수행 → ownerId 인자 불필요.
-  // projectId 도 주입받지 않음 — 아래 comment 조회(parentId 판정용)에서 함께 확보한다.
-  async moveComments(endpointId: number, projectId: number, dto: MoveCommentDto): Promise<void> {
-
+  async moveComments(
+    endpointId: number,
+    projectId: number,
+    dto: MoveCommentDto,
+  ): Promise<void> {
     // 대상 엔드포인트 검증 — 없음/삭제됨/타 프로젝트를 400 하나로 통일 (리소스 은닉)
     const target = await this.prisma.endpoint.findUnique({
       where: { id: dto.targetEndpointId },
       select: { id: true, isDeleted: true, projectId: true }, // 나머지 정보 제거
     });
     if (!target || target.isDeleted || target.projectId !== projectId) {
-      throw new BadRequestException(`EndPoint(ID: ${dto.targetEndpointId})로 이동할 수 없습니다.`);
+      throw new BadRequestException(
+        `EndPoint(ID: ${dto.targetEndpointId})로 이동할 수 없습니다.`,
+      );
     }
 
     // 해당 엔드포인트의 댓글 전량을 대상 엔드포인트로 이동 (최상위 + 대댓글)
     await this.prisma.comment.updateMany({
       where: { endpointId, projectId },
-      data: { endpointId: dto.targetEndpointId }
+      data: { endpointId: dto.targetEndpointId },
     });
   }
 
   // update/softDelete 공용: 작성자 본인 아니면 403
   private assertAuthor(comment: Comment, userId: number): void {
     // comment.userId !== userId 면 ForbiddenException
-    if (comment.userId !== userId) 
-      throw new ForbiddenException(`다른 사람의 댓글은 수정하거나 삭제할 수 없습니다.`);
+    if (comment.userId !== userId)
+      throw new ForbiddenException(
+        `다른 사람의 댓글은 수정하거나 삭제할 수 없습니다.`,
+      );
   }
 
   // parentId 정규화: 넘어온 게 대댓글이면 그 부모(최상위)로 승격 + endpointId 상속 (FR-6.2)
@@ -430,7 +491,7 @@ export class CommentsService {
       where: { id: parentId },
       include: {
         parent: { include: { user: { select: { isAi: true } } } },
-        user: { select: { isAi: true }},
+        user: { select: { isAi: true } },
       },
     });
 
@@ -442,9 +503,11 @@ export class CommentsService {
     const top = replyParent.parent ?? replyParent;
     // top이 최상위가 아닐 경우 error 발생
     if (top.parentId !== null) {
-      throw new InternalServerErrorException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
+      throw new InternalServerErrorException(
+        `2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`,
+      );
     }
-    
+
     // AI 요약 댓글에는 답글 불가
     if (top.user.isAi) {
       throw new BadRequestException('AI 요약에는 답글을 달 수 없습니다.');
@@ -453,7 +516,7 @@ export class CommentsService {
     // parentId의 정보 리턴
     return {
       parentId: top.id,
-      endpointId: top.endpointId
+      endpointId: top.endpointId,
     };
   }
 }

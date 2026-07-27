@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -35,17 +39,23 @@ export class UsersService {
 
   // 초대용 이메일 완전일치 검색
   // AI 계정은 검색 대상에서 제외
-  findByEmail(email: string): Promise<PublicUser| null> {
+  findByEmail(email: string): Promise<PublicUser | null> {
     return this.prisma.user.findFirst({
       where: { email, isAi: false },
       select: { id: true, userName: true, email: true },
     });
   }
   // id로 조회
-  findById(id: number): Promise<PublicUser| null> {
+  findById(id: number): Promise<PublicUser | null> {
     return this.prisma.user.findUnique({
       where: { id },
       select: { id: true, userName: true, email: true },
     });
+  }
+  // 현재 로그인한 사용자 조회
+  async findMe(id: number): Promise<PublicUser> {
+    const me = await this.findById(id);
+    if (!me) throw new UnauthorizedException('유효하지 않은 토큰입니다.');
+    return me;
   }
 }

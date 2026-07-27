@@ -7,6 +7,7 @@ import { Membership, NOTIFICATION_TYPE, ROLE } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MemberView } from './projects.type';
 
 @Injectable()
 export class MembershipsService {
@@ -98,15 +99,17 @@ export class MembershipsService {
   }
 
   // GET /projects/:id/members — 멤버 목록
-  async findMembers(projectId: number): Promise<Membership[]> {
+  findMembers(projectId: number): Promise<MemberView[]> {
     // 해당 프로젝트의 isDeleted=false 멤버십 목록
-    const memberships = await this.prisma.membership.findMany({
-      where: {
-        projectId,
-        isDeleted: false,
+    // select 로 뽑아 Prisma 결과가 곧 MemberView 가 되게 한다(매핑 코드 불필요).
+    // include 를 쓰면 Membership 전체가 딸려와 안 쓰는 필드가 남는다.
+    return this.prisma.membership.findMany({
+      where: { projectId, isDeleted: false },
+      select: {
+        role: true,
+        user: { select: { id: true, userName: true, email: true } },
       },
     });
-    return memberships;
   }
 
   // 멤버십 단건 조회 (없으면 null). 접근 검증 등에 사용.
