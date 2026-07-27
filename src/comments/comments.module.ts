@@ -7,6 +7,7 @@ import { MentionsService } from './mentions.service';
 import { AiSummaryService } from './ai-summary.service';
 import { MembershipGuard } from '../common/guards/membership.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AzureBlobService } from '../azure/azure-blob/azure-blob.service';
 
 @Module({
   imports: [AiModule, NotificationsModule], // ai-summary에서 AiService 필요, mentioins에서 NotificationService 필요
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MentionsService,
     AiSummaryService,
     MembershipGuard, // 계층 3 가드 (projects/endpoints 에 이어 3번째 중복 — 아래 참고)
+    AzureBlobService,
   ],
 })
 export class CommentsModule {}

@@ -56,3 +56,11 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
+__azurite_db_queue__.json
+__azurite_db_queue_extent__.json
+prisma/migrations/20260716052632_created_at_now_change/migration.sql
+.gitignore
+prisma/migrations/20260716060305_created_at_now_test/migration.sql
+prisma/migrations/20260716063712_created_at_now_test_orgn/migration.sql
+prisma/migrations/20260716063940_created_at_now_test_timestamp/migration.sql
+prisma/migrations/20260724025657_add_comment_image/migration.sql

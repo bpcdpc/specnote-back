@@ -7,9 +7,12 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
+  ValidationPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ROLE } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipGuard } from '../common/guards/membership.guard';
@@ -25,6 +28,8 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { imageUploadOptions } from '../common/upload/upload.config';
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
 // 각 메서드에서 전체 경로를 지정한다. (endpoints/:id/... 와 comments/:id/... 혼재)
@@ -139,4 +144,54 @@ export class CommentsController {
   ) {
     return this.reactionsService.toggleReaction(user.id, id, projectId, dto);
   }
+
+  @ApiOperation({ summary: '최상위 댓글 작성' })
+  @ProjectScope('endpoint')
+  @Post('endpoints/:id/comments-images')
+  @ApiConsumes("multipart/form-data")
+  // @ApiBody({
+  //   schema: {
+  //     type: "object",
+  //     properties: {
+  //       content: {type: "string", example: "댓글 입력입니다."},
+  //       images: {type: "array", items: {type: "string", format: "binary"}},
+  //       // mentionedUserIds: { type: "array", items: { type: "number", nullable: true}, example: [3, 4]},
+  //       // mentionedEndpointIds: { type: "array", items: { type: "number", nullable: true}, example: [30]},
+  //       commentImageIds: { type: "array", items: {type: "number", nullable: true}, example: [1, null]},
+  //     },
+  //     required: ['content'],
+  //   }
+  // })
+  @UseInterceptors(FilesInterceptor("images", 5, imageUploadOptions))
+  createCommentAddImages(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) endpointId: number,
+    @CurrentProjectId() projectId: number,
+    @Body(new ValidationPipe({ transform: true })) dto: CreateCommentDto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    console.log(dto);
+    return this.commentsService.createCommentAddImages(
+      user.id,
+      endpointId,
+      projectId,
+      dto,
+      files 
+    );
+  }
+
+  // - comment / delete image
+  @ApiOperation({ summary: '댓글 이미지 삭제 (작성자 본인)' })
+  @ProjectScope('comment')
+  @Delete('comments/:id/images/:imageId')
+  deleteCommentImage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.commentsService.deleteCommentImage(user.id, id, imageId);
+  }
+
+
+
 }

@@ -65,6 +65,7 @@ model Project {
   notifications    Notification[]
   reactions        Reaction[]
   endpointMentions EndpointMention[]
+  commentImages    CommentImage[]
 }
 
 // specJson 스냅샷
@@ -129,6 +130,7 @@ model Comment {
   notifications    Notification[]
   reactions        Reaction[]
   endpointMentions EndpointMention[]
+  commentImages    CommentImage[]
 }
 
 // 사용자 Mention
@@ -188,4 +190,15 @@ model Notification {
   invitedProjectId   Int?
   invitedProject     Project?          @relation(fields: [invitedProjectId], references: [id])
   createdAt          DateTime          @default(now())
+}
+
+// 댓글 이미지 
+model CommentImage {
+  id        Int      @id @default(autoincrement())
+  commentId Int
+  comment   Comment  @relation(fields: [commentId], references: [id])
+  path      String
+  projectId Int
+  project   Project  @relation(fields: [projectId], references: [id])
+  createdAt DateTime @default(now())
 }

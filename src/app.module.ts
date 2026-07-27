@@ -7,6 +7,7 @@ import { CommentsModule } from './comments/comments.module';
 import { AiModule } from './ai/ai.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AzureModule } from './azure/azure.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
     AiModule,
     NotificationsModule,
     PrismaModule,
+    AzureModule,
   ],
 })
 export class AppModule {}

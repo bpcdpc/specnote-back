@@ -27,4 +27,10 @@ export class CreateCommentDto {
   @IsArray()
   @IsInt({ each: true })
   mentionedEndpointIds?: number[];
+
+  @ApiProperty({ required: false, type: [Number], example: [1] })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  commentImageIds?: (number| null)[];
 }

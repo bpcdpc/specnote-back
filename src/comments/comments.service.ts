@@ -1,11 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
-import { Comment, Reaction } from '@prisma/client';
+import { Comment, CommentImage, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import type { CommentTree, CommentView, ReactionSummary, ReplyParent } from './comments.type';
+import { AzureBlobService } from '../azure/azure-blob/azure-blob.service';
 
 const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
 
@@ -14,6 +15,7 @@ export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mentionsService: MentionsService,
+    private readonly azureBlob: AzureBlobService
   ) {}
 
   // GET /endpoints/:id/comments — 전체 댓글 목록(2뎁스 트리)
@@ -453,4 +455,221 @@ export class CommentsService {
       endpointId: top.endpointId
     };
   }
+
+
+  // addImage azure image 업로드
+  async addImage(userId:number, commentId:number, projectId: number, file: Express.Multer.File) {
+    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+    //1. 작성자 체크
+    this.assertAuthor(orgn, userId);
+    const {blobName, path} = await this.azureBlob.uploadPublic (file, projectId.toString());
+
+    const image = await this.prisma.commentImage.create({
+      // data: {productId, storedName: file.filename}
+      data: { commentId, projectId, path: blobName}
+    });
+    // return {id: image.id, url: `${UPLOAD_DIR}/${image.storedName}`}
+    return {id: image.id, path, blobName}
+  }
+  
+  // addImage azure image 업로드
+  async createCommentAddImages(
+    userId:number, 
+    endpointId:number, 
+    projectId: number, 
+    dto: CreateCommentDto,
+    files?: Array<Express.Multer.File>): Promise<Comment> 
+  { 
+    //comment, userMention, endpointMention 저장  
+    const comment = await this.createComment(userId, endpointId, projectId, dto);
+    if (!comment || comment.id === null) {
+      throw new InternalServerErrorException(`댓글 저장 중 오류가 발생했습니다.\n 재시도 해주세요.`);
+    }
+
+    if (!files || files.length === 0) return comment;
+    if (!dto.commentImageIds || dto.commentImageIds.length === 0) return comment;
+    await this.syncCommentImages(projectId, comment.id, dto.commentImageIds, files);
+    
+    
+    // commentImage 파일 저장 
+    // await Promise.all(
+    //   uploadResults.map((result) => this.prisma.commentImage.create({
+    //     data: {commentId: comment.id, projectId, path: result.blobName}
+    //   }))
+    // );
+    
+    return comment;
+      
+  }
+
+
+  // commentImage 삭제 / azureImage도 삭제
+  async deleteCommentImage(userId: number, commentId: number, imageId: number): Promise<void> {
+    // 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
+    const orgn = await this.prisma.comment.findUnique({where: {id: commentId,}});
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+
+    //1. 작성자 체크
+    this.assertAuthor(orgn, userId);
+
+    const target = await this.prisma.commentImage.findUnique({
+      where:{
+        id: imageId
+      },
+      select:{
+        path : true,
+        commentId : true,
+      },
+    })
+    if (!target) {
+      throw new NotFoundException(`이미지(ID: ${imageId})를 찾을 수 없습니다.`);
+    }
+    if (target.commentId !== commentId) {
+      throw new BadRequestException(`해당 댓글에 속한 이미지가 아닙니다.`);
+    }
+
+    const commentImage = await this.prisma.commentImage.delete({
+      where: { id: imageId },
+    });
+
+    await this.azureBlob.deletePublic(target.path);
+
+  }
+
+  // 댓글 이미지 Insert/update 
+  private async syncCommentImages(
+    projectId: number,
+    commentId: number, 
+    commentImageIds: (number|null)[], 
+    files: Array<Express.Multer.File> 
+  ): Promise<CommentImage[]> {
+    
+    // 1. 유지할 기존 이미지 id 목록
+    const keepIds = commentImageIds.filter((id): id is number => id !== null);
+    console.log("keepIds", keepIds);
+    // 2. 현재 DB에 저장된 이미지 전체 조회 (blobName 포함해야 삭제 가능)
+    const existingImages = await this.prisma.commentImage.findMany({
+      where: { commentId, projectId },
+    });
+    console.log("existingImages", existingImages);
+
+    // 3. 삭제 대상: DB에는 있지만 keepIds에 없는 것
+    const imagesToDelete = existingImages.filter(
+      (img) => !keepIds.includes(img.id),
+    );
+console.log("imagesToDelete", imagesToDelete);
+    // 4. 유지되는 기존 이미지들의 파일명(originalName) 목록 (중복 체크용)
+    const keptImages = existingImages.filter((img) => keepIds.includes(img.id));
+    const keptFileNames = keptImages.map((img) => img.path); 
+    console.log(keptImages, keptFileNames)
+    // 5. 업로드 파일 중 이미 존재하는 파일명은 skip, 나머지만 업로드
+    const filesToUpload = files.filter(
+      (file) => !keptFileNames.includes(file.originalname),
+    );
+    const skippedFiles = files.filter((file) =>
+      keptFileNames.includes(file.originalname),
+    );
+    console.log(filesToUpload, skippedFiles);
+    if (skippedFiles.length > 0) {
+      console.log(
+        `중복 파일로 스킵: ${skippedFiles.map((f) => f.originalname).join(', ')}`,
+      );
+    }
+
+    // 6. Blob Storage에서 삭제 대상 파일들 삭제
+    await Promise.all(
+      imagesToDelete.map((img) => this.azureBlob.deletePublic(img.path))
+    );
+
+    // 7. 새 파일 업로드
+    const uploadResults = await Promise.all(
+      filesToUpload.map((file) =>
+        this.azureBlob.uploadPublic(file, projectId.toString())
+      ),
+    );
+
+    // 8. DB 트랜잭션: 삭제 + 신규 삽입
+    await this.prisma.$transaction([
+      this.prisma.commentImage.deleteMany({
+        where: { id: { in: imagesToDelete.map((img) => img.id) } },
+      }),
+      this.prisma.commentImage.createMany({
+        data: uploadResults.map((result) => ({
+            commentId,
+            projectId,
+            blobName: result.blobName,
+            path: result.path,
+        })),
+      }),
+    ]);
+
+    return this.prisma.commentImage.findMany({
+      where: { commentId } 
+    });
+  }
+
+    // // 1. 현재 DB에 있는 항목들 조회
+    // const existing = await this.prisma.commentImage.findMany({
+    //   where: { projectId , commentId },
+    //   select: { id: true, path: true },
+    // });
+    // const existingIds = existing.map((e) => e.id);
+
+    // // 2. 리스트에서 id 있는 것들만 추출 (유지할 항목)
+    // const incomingIds = [...new Set(commentImageIds ?? [])];
+
+    // // 3. DB에는 있지만 리스트에는 없는 id → 삭제 대상
+    // const idsToDelete = existingIds.filter((id) => !incomingIds.includes(id));
+
+    // // 4. id 없는 것들 → insert 대상
+    // const itemsToInsert = commentImageIds.filter((i) => !i);
+    
+    // const uploadResults = await Promise.all(
+    //   files.map((file) => {
+    //     return this.azureBlob.uploadPublic(file, projectId.toString())
+    //   })
+    // );
+
+    // // 5. 트랜잭션으로 한번에 처리
+    // return await this.prisma.$transaction([
+    //   // 삭제
+    //   this.prisma.commentImage.deleteMany({
+    //     where: { id: { in: idsToDelete } },
+    //   }),
+    //   // 삽입
+    //   this.prisma.commentImage.createMany({
+    //     data: itemsToInsert.map((i) => ({
+    //       commentId,
+    //       projectId,
+    //       path: i.path,
+    //     })),
+    //   }),
+    // ]);
+
+    // return null; 
+    // // 파일 업로드 
+    
+
+    
+
+
+
+
+
+
+
+    
+
+
 }
