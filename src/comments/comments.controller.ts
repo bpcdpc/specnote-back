@@ -7,7 +7,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -74,12 +73,12 @@ export class CommentsController {
   @ProjectScope('endpoint')
   @Post('endpoints/:id/ai-summary')
   summarizeThread(
-    @CurrentProjectId() projectId:number,
+    @CurrentProjectId() projectId: number,
     @Param('id', ParseIntPipe) endpointId: number,
   ) {
     return this.aiSummaryService.summarizeThread(endpointId, projectId);
   }
-  
+
   // ── :id = commentId (@ProjectScope('comment')) ──
 
   @ApiOperation({ summary: '대댓글 작성' })
