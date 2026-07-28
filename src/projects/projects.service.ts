@@ -131,6 +131,7 @@ export class ProjectsService {
         role: membership.role,
         isDeleted: project.isDeleted,
       },
+      specJsonUrl: project.specJsonUrl,
       tryItBaseUrl: project.tryItBaseUrl,
       components,
       snapshotId: snapshot?.id ?? 0,

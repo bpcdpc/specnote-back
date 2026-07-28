@@ -597,6 +597,7 @@ type MemberView = {
 // 프로젝트 진입 응답
 type ProjectView = {
   project: ProjectSummary; // 메타
+  specJsonUrl: string;
   tryItBaseUrl: string | null;
   components: unknown; // components JSON. 서버는 전달만 하고, 프론트가 캐싱 + 파싱
   snapshotId: number; // 프론트엔드 캐시 기준이 되는 snapshotId
