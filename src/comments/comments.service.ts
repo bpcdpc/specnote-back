@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException, UnsupportedMediaTypeException, UploadedFile } from '@nestjs/common';
 import { Comment, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
@@ -6,6 +6,8 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import type { CommentTree, CommentView, ReactionSummary, ReplyParent } from './comments.type';
+import { AzureBlobService } from '../azure/azure-blob/azure-blob.service';
+import { CreateComment1Dto } from './dto/create-comment1.dto';
 
 const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
 
@@ -14,7 +16,8 @@ export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mentionsService: MentionsService,
-  ) {}
+    private readonly azureBlob: AzureBlobService,
+  ) { }
 
   // GET /endpoints/:id/comments — 전체 댓글 목록(2뎁스 트리)
   async findComments(
@@ -73,10 +76,10 @@ export class CommentsService {
                 },
               },
             },
-            reactions: true, 
+            reactions: true,
           },
           orderBy: {
-            createdAt: 'asc', 
+            createdAt: 'asc',
           },
         },
         memberMentions: {
@@ -94,30 +97,30 @@ export class CommentsService {
           include: {
             endpoint: {
               select: {
-                  id: true,
-                  path: true,
-                  method: true,
-                },
+                id: true,
+                path: true,
+                method: true,
+              },
             },
           },
         },
         reactions: true,
       },
       orderBy: {
-        createdAt: 'asc', 
+        createdAt: 'asc',
       },
     });
 
     // 3. 리턴타입(CommentTree) 적용하여 리턴
     return comments.map((comment) => this.toCommentTree(userId, comment));
-   
+
   }
 
   //댓글 포멧(CommentTree) 적용 - 최상위 전용: CommentView + replies
   private toCommentTree(curUserId: number, raw: any): CommentTree {
     return {
-      ...(this.toCommentView(curUserId, raw)), 
-      replies: (raw.replies??[]).map((reply: any) => this.toCommentView(curUserId, reply)),
+      ...(this.toCommentView(curUserId, raw)),
+      replies: (raw.replies ?? []).map((reply: any) => this.toCommentView(curUserId, reply)),
     };
   }
 
@@ -130,7 +133,7 @@ export class CommentsService {
       // 삭제된 댓글인 경우 내용 처리 블라인드
       content: raw.isDeleted ? DELETED_COMMENT_TEXT : raw.content,
       isDeleted: raw.isDeleted,
-      
+
       // PublicUser 정보 매핑
       author: {
         id: raw.user.id,
@@ -165,16 +168,16 @@ export class CommentsService {
     currUserId: number, // 현재 로그인한 유저의 ID.
     reactions: Reaction[] = []
   ): ReactionSummary[] {
-    
+
     const summaryMap = new Map<string, ReactionSummary>();
 
     reactions.forEach((react) => {
       const reactionType = react.type; // 예: 'DONE', 'CHECKING' 
-      
+
       // 1. 이미 등록된 리액션 타입이 없다면 초기값 생성
-      const existing = summaryMap.get(reactionType) || { 
-        type: reactionType, 
-        count: 0, 
+      const existing = summaryMap.get(reactionType) || {
+        type: reactionType,
+        count: 0,
         reactedByMe: false // 기본값은 false
       };
 
@@ -215,18 +218,18 @@ export class CommentsService {
     const comment = await this.prisma.comment.create({
       data: {
         endpointId,
-        userId, 
+        userId,
         content: dto.content,
         projectId
       }
     });
-    
+
     // 3. 멘션 동기화
     // 멘션 사용자 등록 
     await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
     // 멘션 EndPoint 등록 
     await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
-    
+
     return comment;
 
   }
@@ -234,9 +237,9 @@ export class CommentsService {
   // 멘션 대상 정규화(중복 제거) + 검증. 유효하지 않으면 400.
   // createComment / createReply / updateComment 공용.
   private async resolveMentions(
-    projectId: number, 
+    projectId: number,
     dto: Pick<CreateCommentDto, 'mentionedUserIds' | 'mentionedEndpointIds'>
-  ): Promise<{ mentionedUserIds: number[];  mentionedEndpointIds: number[] }> {
+  ): Promise<{ mentionedUserIds: number[]; mentionedEndpointIds: number[] }> {
     const userIds = [...new Set(dto.mentionedUserIds ?? [])];
     const endpointIds = [...new Set(dto.mentionedEndpointIds ?? [])];
 
@@ -249,7 +252,7 @@ export class CommentsService {
 
     return { mentionedUserIds: userIds, mentionedEndpointIds: endpointIds };
   }
-    
+
   // 멘션 대상 검증 (멤버십) — 정규화된 id 배열만 받는다
   private async checkMentionUsers(projectId: number, userIds: number[]): Promise<boolean> {
     if (userIds.length === 0) return true;
@@ -267,7 +270,7 @@ export class CommentsService {
         id: true,
       },
     });
-    
+
     return existing.length === userIds.length;
   }
 
@@ -308,7 +311,7 @@ export class CommentsService {
     // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
     // 4. mentionsService.syncMemberMentions(commentId, projectId, ...) /
     //    syncEndpointMentions(commentId, projectId, ...) 호출
-    
+
     //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
     const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
 
@@ -319,19 +322,19 @@ export class CommentsService {
     const comment = await this.prisma.comment.create({
       data: {
         endpointId: replyParent.endpointId,
-        userId, 
+        userId,
         content: dto.content,
         parentId: replyParent.parentId,
         projectId,
       }
     });
-    
+
     //3.멘션 동기화
     // 멘션 사용자 등록 
     await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
     // 멘션 EndPoint 등록 
     await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
-    
+
     return comment;
   }
 
@@ -342,7 +345,7 @@ export class CommentsService {
     dto: UpdateCommentDto,
   ): Promise<Comment> {
     // 댓글 조회 → assertAuthor(comment, userId) → content update
-    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    const orgn = await this.prisma.comment.findUnique({ where: { id: commentId } });
     if (!orgn) {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
@@ -359,7 +362,7 @@ export class CommentsService {
     //3. 댓글 수정 (content)
     const comment = await this.prisma.comment.update({
       where: { id: commentId },
-      data: { content: dto.content}
+      data: { content: dto.content }
     });
 
     //4. 멘션 동기화
@@ -367,14 +370,14 @@ export class CommentsService {
     await this.mentionsService.syncMemberMentions(userId, comment.id, comment.projectId, mentionedUserIds);
     //멘션 EndPoint 동기화
     await this.mentionsService.syncEndpointMentions(comment.id, comment.projectId, mentionedEndpointIds);
-    
+
     return comment;
   }
 
   // DELETE /comments/:id — 소프트 삭제 (작성자 본인)
   async softDeleteComment(userId: number, commentId: number): Promise<Comment> {
     // 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
-    const orgn = await this.prisma.comment.findUnique({where: {id: commentId}});
+    const orgn = await this.prisma.comment.findUnique({ where: { id: commentId } });
     if (!orgn) {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
@@ -388,7 +391,7 @@ export class CommentsService {
     //2. 댓글 삭제 (isDeleted = true)
     const comment = await this.prisma.comment.update({
       where: { id: commentId },
-      data: { isDeleted: true}
+      data: { isDeleted: true }
     });
 
     comment.content = DELETED_COMMENT_TEXT;
@@ -416,7 +419,7 @@ export class CommentsService {
   // update/softDelete 공용: 작성자 본인 아니면 403
   private assertAuthor(comment: Comment, userId: number): void {
     // comment.userId !== userId 면 ForbiddenException
-    if (comment.userId !== userId) 
+    if (comment.userId !== userId)
       throw new ForbiddenException(`다른 사람의 댓글은 수정하거나 삭제할 수 없습니다.`);
   }
 
@@ -427,7 +430,7 @@ export class CommentsService {
       where: { id: parentId },
       include: {
         parent: { include: { user: { select: { isAi: true } } } },
-        user: { select: { isAi: true }},
+        user: { select: { isAi: true } },
       },
     });
 
@@ -441,7 +444,7 @@ export class CommentsService {
     if (top.parentId !== null) {
       throw new InternalServerErrorException(`2뎁스 불변식 위반: 부모(ID: ${top.id})가 최상위가 아닙니다.`);
     }
-    
+
     // AI 요약 댓글에는 답글 불가
     if (top.user.isAi) {
       throw new BadRequestException('AI 요약에는 답글을 달 수 없습니다.');
@@ -453,4 +456,163 @@ export class CommentsService {
       endpointId: top.endpointId
     };
   }
+  // addImage azure image 업로드
+  async addImage(userId: number, commentId: number, projectId: number, file: Express.Multer.File) {
+    const orgn = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+    //1. 작성자 체크 
+    this.assertAuthor(orgn, userId);
+    const { blobName, path } = await this.azureBlob.uploadPublic(file, projectId.toString());
+
+    const image = await this.prisma.commentImage.create({
+      // data: {productId, storedName: file.filename}
+      data: { commentId, projectId, path: blobName }
+    });
+    // return {id: image.id, url: `${UPLOAD_DIR}/${image.storedName}`}
+    return { id: image.id, path, blobName }
+  }
+  // commentImage 삭제 / azureImage도 삭제
+  async deleteCommentImage(userId: number, commentId: number, imageId: number): Promise<void> {
+    // 댓글 조회 → assertAuthor → isDeleted=true → 마스킹된 형태로 반환 (0-7)
+    const orgn = await this.prisma.comment.findUnique({ where: { id: commentId, } });
+    if (!orgn) {
+      throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
+    }
+    if (orgn.isDeleted) {
+      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+    }
+
+    //1. 작성자 체크 
+    this.assertAuthor(orgn, userId);
+
+    const target = await this.prisma.commentImage.findUnique({
+      where: {
+        id: imageId
+      },
+      select: {
+        path: true,
+        commentId: true,
+      },
+    })
+    if (!target) {
+      throw new NotFoundException(`이미지(ID: ${imageId})를 찾을 수 없습니다.`);
+    }
+    if (target.commentId !== commentId) {
+      throw new BadRequestException(`해당 댓글에 속한 이미지가 아닙니다.`);
+    }
+
+    const commentImage = await this.prisma.commentImage.delete({
+      where: { id: imageId },
+    });
+
+    await this.azureBlob.deletePublic(target.path);
+
+  }
+  async createComment1(
+    userId: number,
+    endpointId: number,
+    projectId: number,
+    dto: CreateCommentDto,
+    files?: Express.Multer.File[],
+  ): Promise<Comment> {
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
+
+    //2. 댓글 생성 
+    const comment = await this.prisma.comment.create({
+      data: {
+        endpointId,
+        userId,
+        content: dto.content,
+        projectId
+      }
+    });
+
+    // console.log(dto);
+
+
+
+    if (files && files.length > 0) {
+      try {
+        const uploaded = await Promise.all(
+          files.map((file) => this.azureBlob.uploadPublic(file, projectId.toString())),
+        );
+
+        await this.prisma.commentImage.createMany({
+          data: uploaded.map((u) => ({
+            commentId: comment.id,
+            projectId,
+            path: u.path,
+          })),
+        });
+      } catch (err) {
+        console.log(err);
+        // this.logger.error(`댓글 이미지 업로드 실패: ${err.message}`, err.stack);
+        // 이미지 실패해도 댓글 자체는 살리고 싶다면 여기서 throw 안 함
+        // 이미지 없인 의미 없다면 throw 해서 트랜잭션 롤백 고려
+      }
+    }
+
+
+    // 3. 멘션 동기화
+    // 멘션 사용자 등록 
+    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
+    // 멘션 EndPoint 등록 
+    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
+
+    return comment;
+
+  }
+
+
+
+  async createCommentTest(
+    userId: number,
+    endpointId: number,
+    projectId: number,
+    dto: CreateCommentDto,
+    files?: Express.Multer.File[],
+  ): Promise<Comment> {
+    const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
+
+    // 1. 댓글 생성
+    const comment = await this.prisma.comment.create({
+      data: {
+        endpointId,
+        userId,
+        content: dto.content,
+        projectId,
+      },
+    });
+
+    // 2. 이미지 업로드 (있을 경우에만)
+    if (files && files.length > 0) {
+      try {
+        const uploaded = await Promise.all(
+          files.map((file) => this.azureBlob.uploadPublic(file, projectId.toString())),
+        );
+
+        await this.prisma.commentImage.createMany({
+          data: uploaded.map((u) => ({
+            commentId: comment.id,
+            projectId,
+            storedName: u.blobName,
+            path: u.path,
+          })),
+        });
+      } catch (err) {
+      }
+    }
+
+    // 3. 멘션 동기화
+    await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
+    await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
+
+    return comment;
+  }
+
 }

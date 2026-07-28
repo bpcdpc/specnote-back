@@ -8,9 +8,15 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UnsupportedMediaTypeException,
+  UploadedFile,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
+  ValidationPipe,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ROLE } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipGuard } from '../common/guards/membership.guard';
@@ -26,6 +32,10 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { imageUploadOptions } from '../common/upload/upload.config';
+import { CreateComment1Dto } from './dto/create-comment1.dto';
+
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
 // 각 메서드에서 전체 경로를 지정한다. (endpoints/:id/... 와 comments/:id/... 혼재)
@@ -42,7 +52,7 @@ export class CommentsController {
     private readonly commentsService: CommentsService,
     private readonly reactionsService: ReactionsService,
     private readonly aiSummaryService: AiSummaryService,
-  ) {}
+  ) { }
 
   // ── :id = endpointId (@ProjectScope('endpoint')) ──
 
@@ -77,12 +87,12 @@ export class CommentsController {
   @ProjectScope('endpoint')
   @Post('endpoints/:id/ai-summary')
   summarizeThread(
-    @CurrentProjectId() projectId:number,
+    @CurrentProjectId() projectId: number,
     @Param('id', ParseIntPipe) endpointId: number,
   ) {
     return this.aiSummaryService.summarizeThread(endpointId, projectId);
   }
-  
+
   // ── :id = commentId (@ProjectScope('comment')) ──
 
   @ApiOperation({ summary: '대댓글 작성' })
@@ -140,4 +150,80 @@ export class CommentsController {
   ) {
     return this.reactionsService.toggleReaction(user.id, id, projectId, dto);
   }
+
+  // + comment / add Image
+  @ApiOperation({ summary: '댓글 이미지 올리기' })
+  @ProjectScope('comment')
+  @Post("comments/:id/images")
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { image: { type: "string", format: "binary" } }
+    }
+  })
+  @UseInterceptors(FileInterceptor("image", imageUploadOptions))
+  addImage(
+    @CurrentUser() user: AuthUser,
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentProjectId() projectId: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new UnsupportedMediaTypeException(`올릴 이미지가 없어요`)
+    return this.commentsService.addImage(user.id, id, projectId, file)
+  }
+  // - comment / delete image
+  @ApiOperation({ summary: '댓글 이미지 삭제 (작성자 본인)' })
+  @ProjectScope('comment')
+  @Delete('comments/:id/images/:imageId')
+  deleteCommentImage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.commentsService.deleteCommentImage(user.id, id, imageId);
+  }
+
+  // 댓글+ 이미지 한번에 올리기
+  @ApiOperation({ summary: '댓글 + 이미지 한번에 올리기' })
+  @ProjectScope('endpoint')
+  @Post('endpoints/:id/comments/images')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FilesInterceptor('images', 5, imageUploadOptions))
+  createComment1(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) endpointId: number,
+    @CurrentProjectId() projectId: number,
+    @Body() dto: CreateComment1Dto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    console.log(dto);
+    return this.commentsService.createComment1(user.id, endpointId, projectId, dto, files);
+  }
+
+  // 댓글+ 이미지 한번에 올리기
+  @ApiOperation({ summary: '최상위 댓글 작성 (이미지 테스트)' })
+  @ProjectScope('endpoint')
+  @Post('endpoints/:id/comments/images')
+  @ApiConsumes('multipart/form-data')
+
+  @UseInterceptors(FilesInterceptor("images", 4, imageUploadOptions))
+  createCommentTest(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) endpointId: number,
+    @CurrentProjectId() projectId: number,
+    @Body() dto: CreateComment1Dto,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    return this.commentsService.createCommentTest(
+      user.id,
+      endpointId,
+      projectId,
+      dto,
+      files
+    );
+  }
 }
+
+
+
