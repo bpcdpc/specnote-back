@@ -198,6 +198,7 @@ type EndpointSummary = {
 // 프로젝트 진입 응답
 type ProjectView = {
   project: ProjectSummary;
+  specJsonUrl: string;
   tryItBaseUrl: string | null;
   components: unknown; // components JSON, 프론트가 캐싱·파싱
   snapshotId: number; // 프론트 캐시 기준 스냅샷 id
