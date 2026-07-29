@@ -21,6 +21,12 @@ async function bootstrap() {
 
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
 
+  app.enableCors({
+    origin: ['http://localhost:5173'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, // 쿠키 및 인증 헤더 허용 시 필요
+  });
+
   await app.listen(process.env.PORT ?? 3000);
   console.log(`specnote-back -- localhost:${process.env.PORT} 기동 ... `);
 }
