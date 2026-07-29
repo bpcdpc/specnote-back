@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, NotFoundException, UnsupportedMediaTypeException, UploadedFile } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, UnsupportedMediaTypeException, UploadedFile } from '@nestjs/common';
 import { Comment, Reaction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MentionsService } from './mentions.service';
@@ -7,16 +7,18 @@ import { UpdateCommentDto } from './dto/update-comment.dto';
 import { MoveCommentDto } from './dto/move-comment.dto';
 import type { CommentTree, CommentView, ReactionSummary, ReplyParent } from './comments.type';
 import { AzureBlobService } from '../azure/azure-blob/azure-blob.service';
-import { CreateComment1Dto } from './dto/create-comment1.dto';
+import { CreateCommentWithImageDto } from './dto/create-commentimage.dto';
 
 const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
 
 @Injectable()
 export class CommentsService {
+  private readonly logger = new Logger(CommentsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly mentionsService: MentionsService,
     private readonly azureBlob: AzureBlobService,
+
   ) { }
 
   // GET /endpoints/:id/comments — 전체 댓글 목록(2뎁스 트리)
@@ -473,6 +475,7 @@ export class CommentsService {
       // data: {productId, storedName: file.filename}
       data: { commentId, projectId, path: blobName }
     });
+    this.logger.log(`로거 ${image.projectId} ${image.commentId} ${image.path}로그 발생!`);
     // return {id: image.id, url: `${UPLOAD_DIR}/${image.storedName}`}
     return { id: image.id, path, blobName }
   }
@@ -505,7 +508,7 @@ export class CommentsService {
     if (target.commentId !== commentId) {
       throw new BadRequestException(`해당 댓글에 속한 이미지가 아닙니다.`);
     }
-
+    this.logger.log(`로거 ${target.path} ${target.commentId} 로그 발생!`);
     const commentImage = await this.prisma.commentImage.delete({
       where: { id: imageId },
     });
@@ -513,11 +516,11 @@ export class CommentsService {
     await this.azureBlob.deletePublic(target.path);
 
   }
-  async createComment1(
+  async createCommentImage(
     userId: number,
     endpointId: number,
     projectId: number,
-    dto: CreateCommentDto,
+    dto: CreateCommentWithImageDto,
     files?: Express.Multer.File[],
   ): Promise<Comment> {
     const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
@@ -532,10 +535,6 @@ export class CommentsService {
       }
     });
 
-    // console.log(dto);
-
-
-
     if (files && files.length > 0) {
       try {
         const uploaded = await Promise.all(
@@ -546,7 +545,7 @@ export class CommentsService {
           data: uploaded.map((u) => ({
             commentId: comment.id,
             projectId,
-            path: u.path,
+            path: u.blobName,
           })),
         });
       } catch (err) {
@@ -556,8 +555,6 @@ export class CommentsService {
         // 이미지 없인 의미 없다면 throw 해서 트랜잭션 롤백 고려
       }
     }
-
-
     // 3. 멘션 동기화
     // 멘션 사용자 등록 
     await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
@@ -568,28 +565,37 @@ export class CommentsService {
 
   }
 
-
-
-  async createCommentTest(
+  async createReplyImage(
     userId: number,
-    endpointId: number,
+    parentId: number,
     projectId: number,
-    dto: CreateCommentDto,
+    dto: CreateCommentWithImageDto,
     files?: Express.Multer.File[],
   ): Promise<Comment> {
+    // 1. 멘션 대상 검증 (댓글 생성 전 — 유효하지 않으면 400, createComment 와 동일)
+    //    - mentionedUserIds: 해당 프로젝트 멤버인지 (projectId 사용)
+    //    - mentionedEndpointIds: 해당 프로젝트 소속이며 삭제되지 않았는지 (projectId 사용)
+    // 2. normalizeReply(parentId) → { parentId, endpointId } (2뎁스 고정 + endpointId 상속)
+    // 3. 댓글 생성 (트랜잭션 아님 — 멘션 sync 실패로 본문 날리지 않기 위해)
+    // 4. mentionsService.syncMemberMentions(commentId, projectId, ...) /
+    //    syncEndpointMentions(commentId, projectId, ...) 호출
+
+    //1. 멘션 대상 정규화 + 검증 (댓글 생성 전 — 400)
     const { mentionedUserIds, mentionedEndpointIds } = await this.resolveMentions(projectId, dto);
 
-    // 1. 댓글 생성
+    //parentId 정규화
+    const replyParent = await this.normalizeReply(parentId);
+
+    //2. 대댓글 생성 
     const comment = await this.prisma.comment.create({
       data: {
-        endpointId,
+        endpointId: replyParent.endpointId,
         userId,
         content: dto.content,
+        parentId: replyParent.parentId,
         projectId,
-      },
+      }
     });
-
-    // 2. 이미지 업로드 (있을 경우에만)
     if (files && files.length > 0) {
       try {
         const uploaded = await Promise.all(
@@ -600,19 +606,24 @@ export class CommentsService {
           data: uploaded.map((u) => ({
             commentId: comment.id,
             projectId,
-            storedName: u.blobName,
-            path: u.path,
+            path: u.blobName,
           })),
         });
       } catch (err) {
+        console.log(err);
+        // this.logger.error(`댓글 이미지 업로드 실패: ${err.message}`, err.stack);
+        // 이미지 실패해도 댓글 자체는 살리고 싶다면 여기서 throw 안 함
+        // 이미지 없인 의미 없다면 throw 해서 트랜잭션 롤백 고려
       }
     }
-
-    // 3. 멘션 동기화
+    //3.멘션 동기화
+    // 멘션 사용자 등록 
     await this.mentionsService.syncMemberMentions(userId, comment.id, projectId, mentionedUserIds);
+    // 멘션 EndPoint 등록 
     await this.mentionsService.syncEndpointMentions(comment.id, projectId, mentionedEndpointIds);
 
     return comment;
   }
+
 
 }

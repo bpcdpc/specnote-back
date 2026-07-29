@@ -34,7 +34,7 @@ import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { imageUploadOptions } from '../common/upload/upload.config';
-import { CreateComment1Dto } from './dto/create-comment1.dto';
+import { CreateCommentWithImageDto } from './dto/create-commentimage.dto';
 
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
@@ -189,40 +189,32 @@ export class CommentsController {
   @ProjectScope('endpoint')
   @Post('endpoints/:id/comments/images')
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FilesInterceptor('images', 5, imageUploadOptions))
-  createComment1(
+  @UseInterceptors(FilesInterceptor('images', 5, imageUploadOptions)) //최대 5장 업로드
+  createCommentImage(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) endpointId: number,
     @CurrentProjectId() projectId: number,
-    @Body() dto: CreateComment1Dto,
+    @Body() dto: CreateCommentWithImageDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
     console.log(dto);
-    return this.commentsService.createComment1(user.id, endpointId, projectId, dto, files);
+    return this.commentsService.createCommentImage(user.id, endpointId, projectId, dto, files);
   }
-
-  // 댓글+ 이미지 한번에 올리기
-  @ApiOperation({ summary: '최상위 댓글 작성 (이미지 테스트)' })
-  @ProjectScope('endpoint')
-  @Post('endpoints/:id/comments/images')
+  @ApiOperation({ summary: '대댓글 + 이미지 한번에 올리기' })
+  @ProjectScope('comment')
+  @Post('comments/:id/replies/images')
   @ApiConsumes('multipart/form-data')
-
-  @UseInterceptors(FilesInterceptor("images", 4, imageUploadOptions))
-  createCommentTest(
+  @UseInterceptors(FilesInterceptor('images', 5, imageUploadOptions)) //최대 5장 업로드
+  createReplyImage(
     @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) endpointId: number,
+    @Param('id', ParseIntPipe) parentId: number,
     @CurrentProjectId() projectId: number,
-    @Body() dto: CreateComment1Dto,
+    @Body() dto: CreateCommentWithImageDto,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    return this.commentsService.createCommentTest(
-      user.id,
-      endpointId,
-      projectId,
-      dto,
-      files
-    );
+    return this.commentsService.createReplyImage(user.id, parentId, projectId, dto, files);
   }
+
 }
 
 

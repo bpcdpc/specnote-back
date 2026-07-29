@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsArray, IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class CreateComment1Dto {
+export class CreateCommentWithImageDto {
   @ApiProperty({ example: '이 응답 스키마 확인 부탁해요' })
   @IsString()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
