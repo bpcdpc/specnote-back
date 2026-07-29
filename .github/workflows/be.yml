@@ -28,13 +28,16 @@ jobs:
           npm ci
           npx prisma generate
           npm run build --if-present
-          npm prune --omit=dev
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
+        run: zip -r release.zip . -x '.git/*'
+
+      - uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -52,5 +55,5 @@ jobs:
         with:
           app-name: 'api-specnote'
           slot-name: 'Production'
-          package: .
+          package: release.zip
           publish-profile: ${{ secrets.BE_PUBLISH_PROFILE }}
