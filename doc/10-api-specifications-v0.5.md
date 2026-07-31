@@ -7,6 +7,7 @@
 | v0.3 | 2026.07.16 THU 01:10 | 0-8 삭제된 프로젝트 404 케이스 추가, CommentView.endpointId non-null 정정                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | v0.4 | 2026.07.21 TUE 00:00 | CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string. 댓글/대댓글/수정 Errors에 content 누락·공백 400 추가, 대댓글에 AI 요약 답글 불가 400 추가, 수정에 멘션 400 추가(content 수정 시 멘션 재동기화). summarizeThread 요약 표 시그니처 (endpointId, projectId)로 정정. GET /users/search에 AI 계정 제외 명시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | v0.5 | 2026.07.27 MON       | **코드 실측 대조 반영.** `GET /api/users/me` 신설(구현 완료분 누락) — 토큰의 유저가 없는 경우도 404가 아니라 401로 통일. **댓글 이동을 엔드포인트 단위로 전환**(FR-12 v0.7) — `PATCH /api/comments/:id/move` → `PATCH /api/endpoints/:id/comments/move`, 절 위치도 comments → endpoints, `@ProjectScope('comment')` → `@ProjectScope('endpoint')`. 이동 단위가 스레드에서 엔드포인트 전량으로 바뀌면서 대댓글 단독 이동 400 조항 삭제. 댓글 수정/삭제 Errors에 **이미 삭제된 댓글 400** 추가. 0-2 인증 절에 `users/me` 흐름 추가. **멤버 목록 응답을 `MemberView[]`로 전환** — `Membership` 원형에 `userName`이 없어 프론트가 화면을 그릴 수 없었다. `{ user: PublicUser; role: ROLE }` 형태. 초대/제외 응답은 원형 유지(변경 후 재조회 원칙). **`UserRef` / `EndpointRef` 신설** — 멘션 두 필드와 `ReactionSummary.users`가 공유하는 경량 참조 타입. `ReactionSummary`에 **`users` 추가** — 리액션을 남긴 사람 목록. 개수만으로는 누가 확인 중이고 누가 처리했는지 알 수 없어 리뷰 도구로서 반쪽이었다. **AI 요약 Errors 명시** — 댓글 0건 400, AI 계정 미시드 500, Azure 호출 실패 500. 수집 대상에서 이전 AI 요약 댓글을 제외함을 기록. |
+| v0.6 | 2026.07.31 FRI       | **멘션 대상 검증에서 `isDeleted` 조건 제거.** `checkMentionUsers`의 멤버십 조회와 `checkMentionEndpoints`의 엔드포인트 조회에서 각각 `isDeleted: false`를 뺐다. 제외된 멤버나 삭제된 엔드포인트를 멘션했던 옛 댓글이 **수정 자체가 불가**였다 — 본문만 고치려 해도 멘션 id가 다시 실려 400이 났다. 화면에서도 칩 대신 `#92\|` 원문 토큰이 노출돼 FR-11.3(엔드포인트를 조회하는 모든 기능은 삭제 여부를 일관되게 반영)에 어긋났다. FR-7.4(멘션 기록은 댓글과 별개로 유지)도 같은 방향이다. `projectId` 조건은 남아 있어 남의 프로젝트 대상과 멤버였던 적 없는 사용자는 여전히 차단된다. 새로 멘션할 수 있는 대상의 제한(활성 멤버, 미삭제 엔드포인트)은 프론트 후보 목록이 담당한다. 알림은 `syncMemberMentions`의 신규 추가분에만 나가므로 제외된 멤버에게 발송되지 않는다.                                                                                                                                                                                                                                                                                                                                                                |
 
 > **표기 주의**
 >
@@ -428,8 +429,8 @@ type SummaryInput = { author: string; content: string; createdAt: string };
 - Response `201`: `Comment`
 - Errors:
   - `400` content 누락 또는 공백 (trim 후 빈 문자열)
-  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
-  - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
+  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버였던 적 없음 (리소스 은닉)
+  - `400` 멘션 대상 엔드포인트가 없음/다른 프로젝트 소속 (리소스 은닉)
 
 ### `POST /api/comments/:id/replies` — 대댓글 작성
 
@@ -440,8 +441,8 @@ type SummaryInput = { author: string; content: string; createdAt: string };
 - Errors:
   - `400` content 누락 또는 공백 (trim 후 빈 문자열)
   - `400` AI 요약 댓글에는 답글을 달 수 없음 (부모가 전역 AI 계정)
-  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
-  - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
+  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버였던 적 없음 (리소스 은닉)
+  - `400` 멘션 대상 엔드포인트가 없음/다른 프로젝트 소속 (리소스 은닉)
 
 ### `PATCH /api/comments/:id` — 댓글 수정
 
@@ -451,8 +452,8 @@ type SummaryInput = { author: string; content: string; createdAt: string };
 - Response `200`: `Comment`
 - Errors:
   - `400` content 누락 또는 공백 (trim 후 빈 문자열)
-  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버 아님 (리소스 은닉)
-  - `400` 멘션 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (리소스 은닉)
+  - `400` 멘션 대상 사용자가 해당 프로젝트 멤버였던 적 없음 (리소스 은닉)
+  - `400` 멘션 대상 엔드포인트가 없음/다른 프로젝트 소속 (리소스 은닉)
   - `400` 이미 삭제된 댓글 (`이미 삭제된 댓글입니다.`)
   - `404` 해당 id의 댓글 없음
   - `404` 구성원 아님(가드) / `403` 작성자 아님(assertAuthor) — 0-8 참고

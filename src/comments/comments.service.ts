@@ -276,20 +276,24 @@ export class CommentsService {
   }
 
   // 멘션 대상 검증 (멤버십) — 정규화된 id 배열만 받는다
+  //
+  // isDeleted 로 거르지 않는다.
+  // 제외된 멤버를 멘션한 옛 댓글이 수정 불가가 되기 때문이다 (FR-7.4 — 멘션 기록은 댓글과 별개로 유지된다).
+  // 새 멘션은 프론트 후보 목록이 활성 멤버로 한정한다.
+  // 알림은 신규 추가분에만 가므로(syncMemberMentions 의 added) 제외된 멤버에게 발송되지 않는다.
   private async checkMentionUsers(
     projectId: number,
     userIds: number[],
   ): Promise<boolean> {
     if (userIds.length === 0) return true;
 
-    // 프로젝트 멤버 필터 조회
+    // 멈버쉽중에 프로젝트 단위로 조회 (멤버였던 적이 없는 사람은 거름)
     const existing = await this.prisma.membership.findMany({
       where: {
         userId: {
           in: userIds,
         },
         projectId,
-        isDeleted: false,
       },
       select: {
         id: true,
@@ -300,6 +304,12 @@ export class CommentsService {
   }
 
   // 멘션대상 검증 (EndPoint)
+  //
+  // isDeleted 로 필터링하지 않는다.
+  // 삭제된 엔드포인트를 멘션한 옛 댓글이 수정 불가가 되고, 화면에서도 칩 대신 원문 토큰이 노출된다 —
+  // isDeleted 로 필터링하게 되면 조회 기능은 삭제 여부를 일관되게 반영한다(FR-11.3) 는 내용을 위반하게 된다.
+  // 또 다른 근거로, 삭제된 엔드포인트도 상세 열람과 댓글 조회가 가능하다(FR-11.2) 는 내용도 있다.
+  // 새 멘션은 프론트 후보 목록이 미삭제 엔드포인트로 한정한다.
   private async checkMentionEndpoints(
     projectId: number,
     endpointIds: number[],
@@ -313,7 +323,6 @@ export class CommentsService {
           in: endpointIds,
         },
         projectId,
-        isDeleted: false,
       },
       select: {
         id: true,
