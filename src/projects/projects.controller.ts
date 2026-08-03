@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -22,6 +23,8 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CommitSpecDto } from './dto/commit-spec.dto';
 import { CreateMembershipDto } from './dto/create-membership.dto';
+import { ProjectCommentService } from './project-comment.service';
+import { SearchCommentDto } from './dto/search-comment.dto';
 
 @ApiTags('projects')
 @ApiBearerAuth()
@@ -31,6 +34,7 @@ export class ProjectsController {
   constructor(
     private readonly projectsService: ProjectsService,
     private readonly membershipsService: MembershipsService,
+    private readonly projectCommentService: ProjectCommentService
   ) {}
 
   // ── 계층 1: projectId 없음 (JwtAuthGuard 만) ──
@@ -120,5 +124,26 @@ export class ProjectsController {
   @Get(':id/members')
   findMembers(@Param('id', ParseIntPipe) id: number) {
     return this.membershipsService.findMembers(id);
+  }
+
+  @ApiOperation({ summary: '전체 댓글 조회' })
+  @UseGuards(MembershipGuard)
+  @Post(':id/comment-search')
+  searchComment(@Param('id', ParseIntPipe) id: number,
+                @Body() dto: SearchCommentDto,
+  ) {
+    return this.projectCommentService.searchComment(id, dto);
+  }
+
+  @ApiOperation({ summary: '댓글 검색 (키워드 + 하이라이트 스니펫)' })
+  @UseGuards(MembershipGuard)
+  @Get(':id/comments/search')
+  searchComments(@Param('id', ParseIntPipe) projectId: number,
+                 @Query('keyword') keyword: string,
+  ){
+    return this.projectCommentService.searchComments(
+      projectId,
+      keyword,
+    );
   }
 }

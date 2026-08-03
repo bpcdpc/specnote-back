@@ -46,3 +46,15 @@ export type EndpointDiff = {
 };
 
 export type SpecCommitResult = { snapshotId: number; diff: EndpointDiff };
+
+// 프로젝트 댓글 검색용 응답 
+export type ProjectCommentView = {
+  id: number;
+  endpointId: number;
+  projectId: number;
+  keyword: string;
+  beforeText: string;
+  afterText: string;
+  memberMentions: { userId: number; userName: string }[];
+  endpointMentions: { endpointId: number; path: string; method: string }[];
+};
