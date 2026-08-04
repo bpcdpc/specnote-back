@@ -82,8 +82,9 @@ WBS에 없던 라우트다. 프론트 11단계에서 "새로고침 후 유저 �
 `PATCH /comments/:id/move` (moveThread) → `PATCH /endpoints/:id/comments/move` (moveComments).
 논의는 엔드포인트에 매인 것이라 스레드 하나만 옮기면 남은 댓글과 맥락이 끊긴다(FR-12 v0.7).
 
-- `:id`가 endpointId로 바뀌어 `@ProjectScope('endpoint')`가 필요해졌고,
-  그래서 라우트를 `EndpointsController`가 받는다. 구현은 `comments.service.ts`에 남는다.
+- `:id`가 endpointId로 바뀌어 `@ProjectScope('endpoint')`가 필요해졌다.
+  라우트는 `CommentsController`가 그대로 갖는다 — 같은 base path를 쓰는
+  `findComments`/`createComment`/`summarizeThread`와 같은 자리다.
 - `parentId` 판정이 사라져 대댓글 단독 이동 400 조항도 없어졌다.
 - 단일 `updateMany`가 되어 **트랜잭션이 불필요**해졌다. WBS의 "고급 — 트랜잭션" 분류는
   이 항목에 더 이상 맞지 않는다.
