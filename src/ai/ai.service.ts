@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SummaryInput } from '../comments/comments.type';
 
 @Injectable()
