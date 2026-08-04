@@ -21,11 +21,13 @@ async function bootstrap() {
 
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
 
+  const allowedOrigins = ['http://localhost:5173'];
+  if (process.env.FRONTEND_ORIGIN) {
+    allowedOrigins.push(process.env.FRONTEND_ORIGIN);
+  }
+
   app.enableCors({
-    origin: [
-      'http://localhost:5173',
-      'https://web-specnote-cuauapgsatdzhzbh.koreacentral-01.azurewebsites.net',
-    ],
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
