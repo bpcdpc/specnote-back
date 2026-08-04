@@ -22,6 +22,9 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { CreateReactionDto } from './dto/create-reaction.dto';
 import { CurrentProjectId } from '../common/decorators/current-project-id.decorator';
+import { ProjectRole } from '../common/decorators/project-role.decorator';
+import { ROLE } from '@prisma/client';
+import { MoveCommentDto } from './dto/move-comment.dto';
 
 // 라우트가 두 종류의 base path 를 가짐 → 컨트롤러 데코의 경로는 비우고
 // 각 메서드에서 전체 경로를 지정한다. (endpoints/:id/... 와 comments/:id/... 혼재)
@@ -77,6 +80,18 @@ export class CommentsController {
     @Param('id', ParseIntPipe) endpointId: number,
   ) {
     return this.aiSummaryService.summarizeThread(endpointId, projectId);
+  }
+
+  @ApiOperation({ summary: '[Owner] 엔드포인트 댓글 일괄 이동' })
+  @ProjectScope('endpoint')
+  @ProjectRole(ROLE.OWNER)
+  @Patch('endpoints/:id/comments/move')
+  moveComments(
+    @Param('id', ParseIntPipe) endpointId: number,
+    @CurrentProjectId() projectId: number,
+    @Body() dto: MoveCommentDto,
+  ) {
+    return this.commentsService.moveComments(endpointId, projectId, dto);
   }
 
   // ── :id = commentId (@ProjectScope('comment')) ──

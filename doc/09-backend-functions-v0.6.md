@@ -255,15 +255,9 @@ extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 
 ### 컨트롤러 endpoints.controller.ts
 
-| 라우트                                             | 함수                                       | 입력                                 | 출력                      |
-| -------------------------------------------------- | ------------------------------------------ | ------------------------------------ | ------------------------- |
-| `GET /api/endpoints/:id`                           | `findEndpointDetail(id)`                   | `number`                             | `Promise<EndpointDetail>` |
-| `PATCH /api/endpoints/:id/comments/move` `[Owner]` | `moveComments(endpointId, projectId, dto)` | `number`, `number`, `MoveCommentDto` | `Promise<void>`           |
-
-- **`EndpointsController`가 `CommentsService`에 의존한다.** 댓글 이동은 댓글 로직이지만
-  `:id`가 endpointId라 `@ProjectScope('endpoint')`가 필요하고, 그래서 라우트만 이쪽에 둔다.
-  구현은 `comments.service.ts`의 `moveComments`가 그대로 갖는다.
-  `MoveCommentDto`도 `comments/dto/`에 있는 것을 가져다 쓴다.
+| 라우트                   | 함수                     | 입력     | 출력                      |
+| ------------------------ | ------------------------ | -------- | ------------------------- |
+| `GET /api/endpoints/:id` | `findEndpointDetail(id)` | `number` | `Promise<EndpointDetail>` |
 
 ### 서비스 endpoints.service.ts
 
@@ -279,18 +273,18 @@ findEndpointDetail(endpointId: number): Promise<EndpointDetail>
 
 ### 컨트롤러 comments.controller.ts
 
-| 라우트                               | 함수                                              | 입력                                                | 출력                        |
-| ------------------------------------ | ------------------------------------------------- | --------------------------------------------------- | --------------------------- |
-| `GET /api/endpoints/:id/comments`    | `findComments(user, endpointId)`                  | `AuthUser`, `number`                                | `Promise<CommentTree[]>`    |
-| `POST /api/endpoints/:id/comments`   | `createComment(user, endpointId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
-| `POST /api/comments/:id/replies`     | `createReply(user, parentId, projectId, dto)`     | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
-| `PATCH /api/comments/:id`            | `updateComment(user, id, dto)`                    | `AuthUser`, `number`, `UpdateCommentDto`            | `Promise<Comment>`          |
-| `DELETE /api/comments/:id`           | `softDeleteComment(user, id)`                     | `AuthUser`, `number`                                | `Promise<Comment>`          |
-| `POST /api/comments/:id/reactions`   | `toggleReaction(user, commentId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
-| `POST /api/endpoints/:id/ai-summary` | `summarizeThread(endpointId, projectId)`          | `number`, `number`                                  | `Promise<Comment>`          |
+| 라우트                                             | 함수                                              | 입력                                                | 출력                        |
+| -------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------- | --------------------------- |
+| `GET /api/endpoints/:id/comments`                  | `findComments(user, endpointId)`                  | `AuthUser`, `number`                                | `Promise<CommentTree[]>`    |
+| `POST /api/endpoints/:id/comments`                 | `createComment(user, endpointId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `POST /api/comments/:id/replies`                   | `createReply(user, parentId, projectId, dto)`     | `AuthUser`, `number`, `number`, `CreateCommentDto`  | `Promise<Comment>`          |
+| `PATCH /api/comments/:id`                          | `updateComment(user, id, dto)`                    | `AuthUser`, `number`, `UpdateCommentDto`            | `Promise<Comment>`          |
+| `DELETE /api/comments/:id`                         | `softDeleteComment(user, id)`                     | `AuthUser`, `number`                                | `Promise<Comment>`          |
+| `POST /api/comments/:id/reactions`                 | `toggleReaction(user, commentId, projectId, dto)` | `AuthUser`, `number`, `number`, `CreateReactionDto` | `Promise<Reaction \| null>` |
+| `POST /api/endpoints/:id/ai-summary`               | `summarizeThread(endpointId, projectId)`          | `number`, `number`                                  | `Promise<Comment>`          |
+| `PATCH /api/endpoints/:id/comments/move` `[Owner]` | `moveComments(endpointId, projectId, dto)`        | `number`, `number`, `MoveCommentDto`                | `Promise<void>`             |
 
-> **댓글 이동은 이 컨트롤러에 없다.** `PATCH /api/endpoints/:id/comments/move`로 옮겨
-> `EndpointsController`가 받는다(4절). 구현은 아래 `moveComments`가 갖는다.
+> `MoveCommentDto`는 `comments/dto/`에 있다. `:id`가 endpointId라 `@ProjectScope('endpoint')`를 쓴다 — `findComments`/`createComment`/`summarizeThread`와 같다.
 
 ### 서비스 comments.service.ts
 
@@ -341,7 +335,7 @@ private summarizeReactions(currUserId, reactions): ReactionSummary[]
 //   UserRef 를 입력 타입으로 쓰려 하면 변환할 대상이 사라진다.
 
 moveComments(endpointId, projectId, dto: MoveCommentDto): Promise<void>
-// [Owner] 권한. 라우트는 EndpointsController 가 갖는다(4절).
+// [Owner] 권한.
 // 이동 단위는 스레드가 아니라 엔드포인트다 — 그 엔드포인트의 댓글 전량이 함께 옮겨진다(FR-12).
 //  1. targetEndpoint 조회 — 아래 셋 모두 BadRequest(400) 로 통일
 //     - 없음 / isDeleted / projectId 불일치(다른 프로젝트 소속)

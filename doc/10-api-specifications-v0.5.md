@@ -322,27 +322,6 @@ type EndpointDetail = {
 };
 ```
 
-### `PATCH /api/endpoints/:id/comments/move` — 엔드포인트 댓글 일괄 이동 `[Owner]`
-
-- 권한: `Owner` (계층 3 : `@ProjectScope('endpoint')` + `@ProjectRole(OWNER)`)
-- Path: `id` = **이동할 댓글들이 붙어 있는 엔드포인트 id**
-- Request: `MoveCommentDto` — `{ targetEndpointId: number }`
-- 처리: 해당 엔드포인트의 댓글 **전량**을 대상 엔드포인트로 옮긴다.
-  최상위와 대댓글을 가리지 않는다(FR-12)
-- Response `200`: 없음(void)
-- Errors:
-  - `400` 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (셋을 400 하나로 통일 — 리소스 은닉)
-- 비고:
-  - **이동 단위는 스레드가 아니라 엔드포인트다.** v0.4까지의
-    `PATCH /api/comments/:id/move`(스레드 단위)를 대체한다. 논의는 엔드포인트에 매인
-    것이라 스레드만 옮기면 남은 댓글과 맥락이 끊긴다
-  - 그래서 `:id`가 endpointId이고, 라우트도 `CommentsController`가 아니라
-    **`EndpointsController`** 가 받는다(`@ProjectScope('endpoint')`가 필요하므로).
-    구현은 `comments.service.ts`의 `moveComments`가 그대로 갖는다
-  - 대댓글 단독 이동 개념이 사라져 관련 400 조항도 없어졌다
-  - 옮길 댓글이 0건이어도 에러가 아니다
-  - 단일 `updateMany`라 트랜잭션으로 묶지 않는다
-
 ### `GET /api/endpoints/:id` — 엔드포인트 상세
 
 - 권한: `Member` (계층 3 : `@ProjectScope('endpoint')`)
@@ -492,7 +471,27 @@ type SummaryInput = { author: string; content: string; createdAt: string };
     Azure 장애나 타임아웃은 서버 사정이고 사용자가 고칠 것이 없다
   - 매번 새 댓글이 쌓인다. 기존 요약을 갱신하지 않는다(UC-14)
   - 삭제된 엔드포인트에서도 동작한다(FR-11.2)
-- Errors: `400` 요약할 댓글 없음 / AI 생성 실패
+
+### `PATCH /api/endpoints/:id/comments/move` — 엔드포인트 댓글 일괄 이동 `[Owner]`
+
+- 권한: `Owner` (계층 3 : `@ProjectScope('endpoint')` + `@ProjectRole(OWNER)`)
+- Path: `id` = **이동할 댓글들이 붙어 있는 엔드포인트 id**
+- Request: `MoveCommentDto` — `{ targetEndpointId: number }`
+- 처리: 해당 엔드포인트의 댓글 **전량**을 대상 엔드포인트로 옮긴다.
+  최상위와 대댓글을 가리지 않는다(FR-12)
+- Response `200`: 없음(void)
+- Errors:
+  - `400` 대상 엔드포인트가 없음/삭제됨/다른 프로젝트 소속 (셋을 400 하나로 통일 — 리소스 은닉)
+- 비고:
+  - **이동 단위는 스레드가 아니라 엔드포인트다.** v0.4까지의
+    `PATCH /api/comments/:id/move`(스레드 단위)를 대체한다. 논의는 엔드포인트에 매인
+    것이라 스레드만 옮기면 남은 댓글과 맥락이 끊긴다
+  - 그래서 `:id`가 endpointId이고 `@ProjectScope('endpoint')`를 쓴다.
+    라우트는 `CommentsController`가 받는다 — 같은 base path를 쓰는
+    `findComments`/`createComment`/`summarizeThread`와 같은 자리다
+  - 대댓글 단독 이동 개념이 사라져 관련 400 조항도 없어졌다
+  - 옮길 댓글이 0건이어도 에러가 아니다
+  - 단일 `updateMany`라 트랜잭션으로 묶지 않는다
 
 ---
 
@@ -560,10 +559,10 @@ type Notification = {
 | DELETE | `/api/projects/:id/members/:userId` | removeMember       | —                     | `id`, `userId` | —           | Owner                       | 2        | —             | `OWNER`      |
 | GET    | `/api/projects/:id/members`         | findMembers        | —                     | `id`           | —           | Member                      | 2        | —             | —            |
 | GET    | `/api/endpoints/:id`                | findEndpointDetail | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
-| PATCH  | `/api/endpoints/:id/comments/move`  | moveComments       | `MoveCommentDto`      | `id`           | —           | Owner                       | 3        | `endpoint`    | `OWNER`      |
 | GET    | `/api/endpoints/:id/comments`       | findComments       | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
 | POST   | `/api/endpoints/:id/comments`       | createComment      | `CreateCommentDto`    | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
 | POST   | `/api/endpoints/:id/ai-summary`     | summarizeThread    | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
+| PATCH  | `/api/endpoints/:id/comments/move`  | moveComments       | `MoveCommentDto`      | `id`           | —           | Owner                       | 3        | `endpoint`    | `OWNER`      |
 | POST   | `/api/comments/:id/replies`         | createReply        | `CreateCommentDto`    | `id`           | —           | Member                      | 3        | `comment`     | —            |
 | POST   | `/api/comments/:id/reactions`       | toggleReaction     | `CreateReactionDto`   | `id`           | —           | Member                      | 3        | `comment`     | —            |
 | PATCH  | `/api/comments/:id`                 | updateComment      | `UpdateCommentDto`    | `id`           | —           | Member + 본인(assertAuthor) | 3        | `comment`     | —            |
