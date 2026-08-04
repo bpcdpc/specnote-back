@@ -22,9 +22,13 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
 
   app.enableCors({
-    origin: ['http://localhost:5173'],
+    origin: [
+      'http://localhost:5173',
+      'https://web-specnote-cuauapgsatdzhzbh.koreacentral-01.azurewebsites.net',
+    ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // 쿠키 및 인증 헤더 허용 시 필요
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
 
   await app.listen(process.env.PORT ?? 3000);
