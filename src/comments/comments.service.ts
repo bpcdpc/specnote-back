@@ -19,7 +19,7 @@ import type {
   UserRef,
 } from './comments.type';
 
-const DELETED_COMMENT_TEXT = '삭제된 댓글입니다.';
+const DELETED_COMMENT_TEXT = '삭제된 글입니다.';
 
 @Injectable()
 export class CommentsService {
@@ -399,7 +399,7 @@ export class CommentsService {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
     if (orgn.isDeleted) {
-      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+      throw new BadRequestException(`이미 삭제된 글입니다.`);
     }
 
     //1. 작성자 체크
@@ -443,7 +443,7 @@ export class CommentsService {
       throw new NotFoundException(`댓글(ID: ${commentId})을 찾을 수 없습니다.`);
     }
     if (orgn.isDeleted) {
-      throw new BadRequestException(`이미 삭제된 댓글입니다.`);
+      throw new BadRequestException(`이미 삭제된 글입니다.`);
     }
 
     //1. 작성자 체크

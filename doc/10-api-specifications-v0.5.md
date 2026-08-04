@@ -108,7 +108,7 @@ type PublicUser = { id: number; userName: string; email: string };
   - 화면이 리소스에 머무름 → 갱신된(마스킹 포함) 로우 반환 (프론트가 재조회 없이 상태 갱신)
   - 화면을 이탈함 → `void`
 - 적용 결과:
-  - `DELETE /api/comments/:id` → 마스킹된 `Comment` 반환 (자리 유지·내용만 "삭제된 댓글입니다")
+  - `DELETE /api/comments/:id` → 마스킹된 `Comment` 반환 (자리 유지·내용만 "삭제된 글입니다")
   - `DELETE /api/projects/:id/members/:userId` → `Membership` 반환 (멤버 목록에서 즉시 갱신)
   - `DELETE /api/projects/:id` → `void` (삭제 후 목록으로 이탈)
 
@@ -418,7 +418,7 @@ type SummaryInput = { author: string; content: string; createdAt: string };
 ### `GET /api/endpoints/:id/comments` — 댓글 목록
 
 - 권한: `Member` (계층 3 : `@ProjectScope('endpoint')`)
-- Response `200`: `CommentTree[]` (삭제 댓글 원문은 "삭제된 댓글입니다" 등으로 마스킹)
+- Response `200`: `CommentTree[]` (삭제 댓글 원문은 "삭제된 글입니다" 등으로 마스킹)
 - 참고: 단건 조회 API 없음 — 전량 로드로 해결. 페이지네이션 없음
 
 ### `POST /api/endpoints/:id/comments` — 최상위 댓글 작성
@@ -454,7 +454,7 @@ type SummaryInput = { author: string; content: string; createdAt: string };
   - `400` content 누락 또는 공백 (trim 후 빈 문자열)
   - `400` 멘션 대상 사용자가 해당 프로젝트 멤버였던 적 없음 (리소스 은닉)
   - `400` 멘션 대상 엔드포인트가 없음/다른 프로젝트 소속 (리소스 은닉)
-  - `400` 이미 삭제된 댓글 (`이미 삭제된 댓글입니다.`)
+  - `400` 이미 삭제된 댓글 (`이미 삭제된 글입니다.`)
   - `404` 해당 id의 댓글 없음
   - `404` 구성원 아님(가드) / `403` 작성자 아님(assertAuthor) — 0-8 참고
 
@@ -465,7 +465,7 @@ type SummaryInput = { author: string; content: string; createdAt: string };
   DB의 `content`는 원문 그대로 남는다
 - Response `200`: 마스킹된 `Comment` (0-7 참고)
 - Errors:
-  - `400` 이미 삭제된 댓글 (`이미 삭제된 댓글입니다.`)
+  - `400` 이미 삭제된 댓글 (`이미 삭제된 글입니다.`)
   - `404` 해당 id의 댓글 없음
   - `404` 구성원 아님(가드) / `403` 작성자 아님(assertAuthor) — 0-8 참고
 

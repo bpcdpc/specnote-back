@@ -323,7 +323,7 @@ softDeleteComment(userId, commentId): Promise<Comment>
 
 findComments(userId, endpointId): Promise<CommentTree[]>
 // 전체 댓글 목록 반환 (삭제 포함 — 자리를 지킨다, FR-5.3)
-// 삭제된 댓글은 원문을 "삭제된 댓글입니다"등의 문구로 마스킹하여 프론트에다가 전달해 줌
+// 삭제된 댓글은 원문을 "삭제된 글입니다"등의 문구로 마스킹하여 프론트에다가 전달해 줌
 // 최상위만 조회하고 replies 를 중첩 include 한다. 양쪽 다 createdAt asc.
 // **reactions 는 user.userName 을 함께 include 한다** — ReactionSummary.users 를 채운다.
 //   reactions: { include: { user: { select: { userName: true } } } }
@@ -681,7 +681,7 @@ type CommentView = {
   id: number;
   endpointId: number;
   parentId: number | null;
-  content: string; // 삭제 시 서버에서 마스킹 : "삭제된 내용입니다."
+  content: string; // 삭제 시 서버에서 마스킹 : "삭제된 글입니다."
   isDeleted: boolean;
   author: PublicUser;
   isAiGenerated: boolean; // 작성자가 전역 AI 계정이면 true
