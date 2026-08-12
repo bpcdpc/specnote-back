@@ -8,6 +8,7 @@
 | v0.4 | 2026.07.16 THU 00:05 | 가드가 역참조한 projectId를 서비스가 재사용하도록 시그니처 정리. createComment·createReply·toggleReaction에 projectId 인자 추가(@CurrentProjectId 주입), findEndpointDetail·moveThread에서 미사용 userId/ownerId 제거(인가는 MembershipGuard 전담). @CurrentProjectId 커스텀 데코레이터 추가. moveThread 스레드 이동 실패 케이스 400 통일 반영(ForbiddenException → BadRequestException). updateProject·softDeleteProject 시그니처에서 미사용 userId 제거(코드 반영분 문서 동기화).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | v0.5 | 2026.07.21 TUE 00:00 | syncMemberMentions 시그니처에 senderId 추가(4인자, 알림 발신자), sync 계열 주석을 "검증된 id만 받음·전량 교체·신규분만 알림"으로 정정. summarizeThread 시그니처 (actorUserId, endpointId) → (endpointId, projectId). CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string(다른 뷰 타입과 통일해 개발자 인식 편의). toggleReaction 서비스 시그니처 정의에 projectId 반영(v0.4 라우트표엔 있었으나 정의 줄 누락분). updateComment 주석 content만 → content 및 멘션 수정 가능. CreateNotificationDto에 senderId 추가(코드·10 명세 Notification 원형·syncMemberMentions senderId와 정합). users.service 반환타입 User → PublicUser 정정(정의 블록 누락분, password 제외 반영). findByEmail 주석에 AI 계정 제외 명시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | v0.6 | 2026.07.27 MON       | **코드 실측 대조 반영.** `GET /api/users/me`(`findMe`) 신설 — 구현 완료분이 누락돼 있었다. `findMe`는 `findById`를 감싸 null이면 `UnauthorizedException`(401)을 던진다(조회와 throw 판단 분리, 컨트롤러는 순수 위임). **댓글 이동을 엔드포인트 단위로 전환**(FR-12 v0.7) — `moveThread(commentId, dto)` → `moveComments(endpointId, projectId, dto)`, 라우트 `PATCH /api/comments/:id/move` → `PATCH /api/endpoints/:id/comments/move`, 소속 컨트롤러도 comments → **endpoints**로 이동(`:id`가 endpointId라 `@ProjectScope('endpoint')`가 필요). 대댓글 단독 이동 개념이 사라져 관련 400 조항 삭제. `updateComment`/`softDeleteComment`에 **이미 삭제된 댓글 400** 추가. `updateComment`의 `projectId` 확보 경로(comment 행 self-lookup) 명시. AI 요약 답글 차단이 `normalizeReply` 내부임을 명시. **`findMembers` 반환을 `MemberView[]`로 전환** — Prisma `Membership` 원형에는 `userName`이 없어 프론트 멤버 칩과 멘션 후보를 그릴 수 없었다. `select`로 `role` + `user`만 뽑는다. `inviteMember`/`removeMember`/`getMembership`은 원형 유지. **`UserRef` / `EndpointRef` 경량 참조 타입 신설** — `CommentView`의 멘션 두 필드가 인라인 익명 타입이었는데 `ReactionSummary.users`가 같은 모양을 쓰게 되어 이름을 붙였다. `MemberMention`이 아닌 이유는 리액션을 남긴 사람이 멘션된 사람이 아니기 때문이다. `ReactionSummary`에 **`users` 추가**(리액션을 남긴 사람 목록) — findComments 의 reactions include 를 최상위·replies 양쪽에서 user 포함으로 바꾸고 summarizeReactions 가 적재한다. `MemberView` 정의 위치를 `projects/projects.type.ts`로 명시. findComments·summarizeReactions 서술 보강. **`ai-summary.service.ts`·`ai.service.ts` 절 보강** — 이전 AI 요약을 수집 대상에서 제외, 댓글 0건 400, AI 호출 실패는 받은 에러를 그대로 재던짐(400 변환 금지), `findAiUser` 부재는 500. — 필수 환경변수 3종과 생성자에서 던지는 동작(미설정 시 앱 부팅 실패), 모델 파라미터, 실패 시 500 명시. |
+| v0.7 | 2026.08.13 THU       | **스냅샷 지정 조회 도입.** `findEndpointDetail(endpointId, projectId, requestedSnapshotId?)` — 요청 스냅샷이 최신보다 낮으면 `SpecSnapshot.rawJson`에서 operation을 꺼내 응답 전체를 그 버전으로 맞춘다(FR-10.6). `projectId`는 `@CurrentProjectId` 주입 — 가드가 검증한 값으로 스냅샷 조회를 스코프해야 타 프로젝트 스펙 열람이 막힌다. **`getSnapshotJson(projectId, snapshotId)` 신설**(projects 소유, endpoints가 주입해 사용), **`extractOperation(rawJson, path, method)` 신설**(spec-extractor). `EndpointDetail.snapshotId`를 "이 응답이 나온 스냅샷"으로 재정의하고 배너 판정용 최신값은 **`latestSnapshotId`로 분리**. 그 스냅샷에 없는 엔드포인트는 404 `NOT_IN_SNAPSHOT`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ---
 
@@ -193,6 +194,13 @@ private syncEndpoints(tx: Prisma.TransactionClient, projectId: number, extracted
 
 getLatestSnapshotVersion(projectId: number): Promise<number>
 // 최신 SpecSnapshot.id. projects 소유 확정(스냅샷 도메인). endpoints는 projectsService 주입으로 사용
+
+getSnapshotJson(projectId: number, snapshotId: number): Promise<unknown>
+// 특정 SpecSnapshot.rawJson. 없으면 null.
+// where 에 projectId 를 함께 건다 — MembershipGuard 는 endpointId 로만 프로젝트를 확정하므로,
+// id 단독 조회를 두면 임의의 snapshotId 로 타 프로젝트 스펙 전문을 읽는 경로가 열린다.
+// 클라이언트가 보낸 값이 틀릴 수 있는 자리라 던지지 않고 null 을 낸다
+// (getLatestSnapshotVersion 은 스냅샷 부재가 불변식 위반이라 방어적으로 던진다).
 ```
 
 ### 서비스 memberships.service.ts
@@ -245,6 +253,15 @@ extractSpecInfo(rawJson: SpecDocument): SpecInfo
 
 extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 // endpoint 목록 추출
+
+extractOperation(rawJson: unknown, path: string, method: string): Record<string, unknown> | null
+// 스냅샷 rawJson 에서 operation 하나를 꺼낸다.
+// extractEndpoints 와 달리 SpecDocument 를 받지 않는다
+// 거기는 validate 를 통과해 메모리에 올라온 spec 을 받지만,
+// 여기는 디비에서 읽은 값이라 구조가 보장되지 않는다.
+// 검증 통과분만 저장되므로 형태는 맞겠지만
+// 그것은 저장할 때 지킨 규칙이지 읽어온 값의 타입이 보장되는 것이 아니다.
+// isObject 로 한 단계씩 좁혀간다.
 ```
 
 - DTO: `CreateProjectDto`, `UpdateProjectDto`, `CommitSpecDto`, `CreateMembershipDto`
@@ -255,17 +272,31 @@ extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 
 ### 컨트롤러 endpoints.controller.ts
 
-| 라우트                   | 함수                     | 입력     | 출력                      |
-| ------------------------ | ------------------------ | -------- | ------------------------- |
-| `GET /api/endpoints/:id` | `findEndpointDetail(id)` | `number` | `Promise<EndpointDetail>` |
+| 라우트                   | 함수                                             | 입력                          | 출력                      |
+| ------------------------ | ------------------------------------------------ | ----------------------------- | ------------------------- |
+| `GET /api/endpoints/:id` | `findEndpointDetail(id, projectId, snapshotId?)` | `number`, `number`, `number?` | `Promise<EndpointDetail>` |
+
+> `projectId`는 `@CurrentProjectId`, `snapshotId`는 `@Query('snapshotId', new ParseIntPipe({ optional: true }))`.
 
 ### 서비스 endpoints.service.ts
 
 ```tsx
-findEndpointDetail(endpointId: number): Promise<EndpointDetail>
-// 정합성을 검사하기 위한 최신 snapshotId를 포함해야 함
-// snapshotId는 projects의 getLatestSnapshotVersion(projectsService 주입)으로 취득
+findEndpointDetail(endpointId: number, projectId: number, requestedSnapshotId?: number): Promise<EndpointDetail>
+// requestedSnapshotId 가 최신보다 낮으면 그 스냅샷 기준으로 응답한다(FR-10.6).
+// 배너가 떠 있는 동안 프론트는 캐시된 옛 스냅샷을 앵커로 들고 있고 사이드바도 그 버전이다.
+// latestSnapshotId 는 항상 getLatestSnapshotVersion(projectsService 주입)으로 취득한다.
 ```
+
+| 요청 `snapshotId`  | 스펙 필드 출처          | `isDeleted`   |
+| ------------------ | ----------------------- | ------------- |
+| 생략 / `>= latest` | `Endpoint` 행           | `Endpoint` 행 |
+| `< latest`         | `extractOperation` 결과 | `false`       |
+
+`Endpoint` 행에서 그대로 쓰는 것은 `id`, `path`, `method` 셋뿐이다. 이 셋은 동일성 키(`@@unique([projectId, path, method])`)라 `syncEndpoints`의 `update` 절에 없어 버전과 무관하다. 나머지 스펙 필드는 커밋마다 덮어써지므로 옛 버전은 `SpecSnapshot.rawJson`에서 꺼낸다.
+
+`< latest` 갈래에서 `isDeleted`를 `false`로 고정하는 것은 `syncEndpoints`가 "이번 스펙에 없는 것"을 소프트 삭제하는 규칙의 역산이다. 스냅샷에 operation이 없으면 `NOT_IN_SNAPSHOT`으로 갈리므로 `true`가 나올 경로가 없다.
+
+응답 `snapshotId`, 폴백 규칙, 에러 응답 형태는 10-api 4장 참조.
 
 ---
 

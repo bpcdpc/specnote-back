@@ -8,6 +8,7 @@
 | v0.4 | 2026.07.21 TUE 00:00 | CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string. 댓글/대댓글/수정 Errors에 content 누락·공백 400 추가, 대댓글에 AI 요약 답글 불가 400 추가, 수정에 멘션 400 추가(content 수정 시 멘션 재동기화). summarizeThread 요약 표 시그니처 (endpointId, projectId)로 정정. GET /users/search에 AI 계정 제외 명시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | v0.5 | 2026.07.27 MON       | **코드 실측 대조 반영.** `GET /api/users/me` 신설(구현 완료분 누락) — 토큰의 유저가 없는 경우도 404가 아니라 401로 통일. **댓글 이동을 엔드포인트 단위로 전환**(FR-12 v0.7) — `PATCH /api/comments/:id/move` → `PATCH /api/endpoints/:id/comments/move`, 절 위치도 comments → endpoints, `@ProjectScope('comment')` → `@ProjectScope('endpoint')`. 이동 단위가 스레드에서 엔드포인트 전량으로 바뀌면서 대댓글 단독 이동 400 조항 삭제. 댓글 수정/삭제 Errors에 **이미 삭제된 댓글 400** 추가. 0-2 인증 절에 `users/me` 흐름 추가. **멤버 목록 응답을 `MemberView[]`로 전환** — `Membership` 원형에 `userName`이 없어 프론트가 화면을 그릴 수 없었다. `{ user: PublicUser; role: ROLE }` 형태. 초대/제외 응답은 원형 유지(변경 후 재조회 원칙). **`UserRef` / `EndpointRef` 신설** — 멘션 두 필드와 `ReactionSummary.users`가 공유하는 경량 참조 타입. `ReactionSummary`에 **`users` 추가** — 리액션을 남긴 사람 목록. 개수만으로는 누가 확인 중이고 누가 처리했는지 알 수 없어 리뷰 도구로서 반쪽이었다. **AI 요약 Errors 명시** — 댓글 0건 400, AI 계정 미시드 500, Azure 호출 실패 500. 수집 대상에서 이전 AI 요약 댓글을 제외함을 기록. |
 | v0.6 | 2026.07.31 FRI       | **멘션 대상 검증에서 `isDeleted` 조건 제거.** `checkMentionUsers`의 멤버십 조회와 `checkMentionEndpoints`의 엔드포인트 조회에서 각각 `isDeleted: false`를 뺐다. 제외된 멤버나 삭제된 엔드포인트를 멘션했던 옛 댓글이 **수정 자체가 불가**였다 — 본문만 고치려 해도 멘션 id가 다시 실려 400이 났다. 화면에서도 칩 대신 `#92\|` 원문 토큰이 노출돼 FR-11.3(엔드포인트를 조회하는 모든 기능은 삭제 여부를 일관되게 반영)에 어긋났다. FR-7.4(멘션 기록은 댓글과 별개로 유지)도 같은 방향이다. `projectId` 조건은 남아 있어 남의 프로젝트 대상과 멤버였던 적 없는 사용자는 여전히 차단된다. 새로 멘션할 수 있는 대상의 제한(활성 멤버, 미삭제 엔드포인트)은 프론트 후보 목록이 담당한다. 알림은 `syncMemberMentions`의 신규 추가분에만 나가므로 제외된 멤버에게 발송되지 않는다.                                                                                                                                                                                                                                                                                                                                                                |
+| v0.6 | 2026.08.13 THU       | **`GET /api/endpoints/:id`에 `?snapshotId` 쿼리 파라미터 추가.** 지정하면 그 스냅샷 기준으로 응답한다 — 배너가 떠 있는 동안 중앙 상세가 사이드바와 같은 버전을 보게 하기 위함(FR-10.6). `EndpointDetail.snapshotId`의 의미를 **"이 응답이 나온 스냅샷"**으로 바꾸고, 배너 판정용 최신값은 **`latestSnapshotId`로 분리**. 한 필드가 두 의미를 겸해 프론트가 출처 버전으로 오해하던 문제를 해소. 그 스냅샷에 없는 엔드포인트는 **404 `NOT_IN_SNAPSHOT`**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 > **표기 주의**
 >
@@ -318,15 +319,37 @@ type EndpointDetail = {
   tags: string[];
   operationJson: unknown; // operation JSON, 프론트가 파싱
   isDeleted: boolean;
-  snapshotId: number; // 정합성 비교용 최신 스냅샷 id
+  snapshotId: number; // 이 응답이 나온 스냅샷
+  latestSnapshotId: number; // 서버의 현재 최신 스냅샷 (배너 판정용)
 };
+
+// 'operationJson'부터 'isDeleted'까지는 'snapshotId' 기준으로 정렬된다.
+// 'id', 'path', 'method'는 unique 키라 버전과 무관하다.
 ```
 
 ### `GET /api/endpoints/:id` — 엔드포인트 상세
 
 - 권한: `Member` (계층 3 : `@ProjectScope('endpoint')`)
+- Query: `snapshotId?: number` — 지정하면 그 스냅샷 기준으로 응답. 생략하거나 최신 이상이면 최신
 - Response `200`: `EndpointDetail`
-- 참고: 응답 `snapshotId` ≠ 프론트 캐시 `snapshotId`면 프론트가 "스펙 업데이트됨" 배너 표시 후 사용자가 직접 새로고침하기를 유도
+- Errors
+  - `404` — 없는 엔드포인트, 또는 남의 프로젝트 것(리소스 은닉)
+  - `404` `code: NOT_IN_SNAPSHOT` — 그 스냅샷 시점에 없던 엔드포인트. 커밋 이후 추가된 것을 옛 버전으로 조회하면 발생
+  - `400` — `snapshotId`가 정수가 아님(`ParseIntPipe`)
+
+**동작**
+
+| 요청                       | 응답 기준             | 응답 `snapshotId` |
+| -------------------------- | --------------------- | ----------------- |
+| 생략 / `>= latest`         | 최신                  | `latest`          |
+| `< latest`, 그 버전에 있음 | 요청한 버전           | 요청값            |
+| `< latest`, 그 버전에 없음 | 404 `NOT_IN_SNAPSHOT` | —                 |
+
+최신을 넘는 값은 에러가 아니라 최신으로 처리한다. 상세가 프론트 캐시보다 앞서는 방향은 사용자에게 물을 것이 없어 배너 조건도 단방향(`>`)이다.
+
+응답의 `operationJson`, `operationId`, `summary`, `tags`, `isDeleted`는 모두 응답 `snapshotId` 기준으로 정렬된다. 옛 버전을 요청하면 그 시점에 살아 있던 엔드포인트이므로 `isDeleted`는 `false`다.
+
+- 참고: `latestSnapshotId` > 프론트 캐시 `snapshotId`면 프론트가 "스펙 업데이트됨" 배너를 띄우고, 사용자가 새로고침을 눌러야 앵커가 최신으로 교체된다(FR-10.6)
 
 ---
 
