@@ -239,6 +239,18 @@ export class ProjectsService {
     return snapshot.id;
   }
 
+  // 특정 스냅샷의 원본 json
+  async getSnapshotJson(
+    projectId: number,
+    snapshotId: number,
+  ): Promise<unknown> {
+    const snapshot = await this.prisma.specSnapshot.findFirst({
+      where: { id: snapshotId, projectId },
+      select: { rawJson: true },
+    });
+    return snapshot?.rawJson ?? null;
+  }
+
   // ── 공유 tx 헬퍼 (createProject / commitSpec 공용, 트랜잭션 열지 않음) ──
 
   private async applySpecCommit(

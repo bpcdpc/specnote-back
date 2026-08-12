@@ -51,3 +51,29 @@ export function extractEndpoints(spec: SpecDocument): ExtractedEndpoint[] {
 
   return results;
 }
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// 스냅샷 rawJson에서 한개의 operation을 꺼낸다.
+// extractEndpoints는 스펙 파싱 과정에서 validation이 끝난, 메모리에 올라와 있는 spec을 받지만,
+// 여기는 디비에 저장된 rawJson을 가져와야 하기 때문에 타입을 단언하면 런타임에서 발생하는 에러를 막지 못한다.
+// 현실적으로는 validation이 끝난 spec 문서를 디비에 저장하기 때문에 문제가 발생하지 않겠지만,
+// 논리적으로는 읽기 경로에서 타입이 보장된다고 할 수 없다.
+export function extractOperation(
+  rawJson: unknown,
+  path: string,
+  method: string,
+): Record<string, unknown> | null {
+  if (!isObject(rawJson)) return null;
+
+  const paths = rawJson.paths;
+  if (!isObject(paths)) return null;
+
+  const pathItem = paths[path];
+  if (!isObject(pathItem)) return null;
+
+  const operation = pathItem[method];
+  return isObject(operation) ? operation : null;
+}
