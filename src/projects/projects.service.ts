@@ -9,13 +9,20 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { CommitSpecDto } from './dto/commit-spec.dto';
 import { loadSpec } from './utils/spec-loader';
-import { extractSpecInfo, extractEndpoints } from './utils/spec-extractor';
+import {
+  extractSpecInfo,
+  extractEndpoints,
+  extractSnapshotContent,
+  key,
+} from './utils/spec-extractor';
 import { ExtractedEndpoint, SpecResult } from './utils/spec.type';
 import {
   EndpointDiff,
+  ProjectMeta,
   ProjectSummary,
-  ProjectView,
+  Spec,
   SpecCommitResult,
+  SpecOperation,
 } from './projects.type';
 
 @Injectable()
@@ -26,7 +33,7 @@ export class ProjectsService {
   async createProject(
     ownerId: number,
     dto: CreateProjectDto,
-  ): Promise<ProjectView> {
+  ): Promise<ProjectMeta> {
     // [트랜잭션 밖] 네트워크 fetch·검증·추출
     const loaded = await loadSpec(dto.specJsonUrl);
     if (!loaded.ok) this.throwSpecError(loaded);
@@ -54,8 +61,8 @@ export class ProjectsService {
       return project.id;
     });
 
-    // 커밋된 상태를 ProjectView 로 반환 (findProject 재사용)
-    return this.findProject(ownerId, projectId);
+    // 커밋된 상태를 ProjectMeta 로 반환
+    return this.findProjectMeta(ownerId, projectId);
   }
 
   // GET /projects — 내가 멤버인 프로젝트 목록
@@ -83,92 +90,128 @@ export class ProjectsService {
     }));
   }
 
-  // GET /projects/:id — 프로젝트 진입
-  async findProject(userId: number, projectId: number): Promise<ProjectView> {
+  // GET /projects/:id - 프로젝트 메타
+  // 스펙 버전과 무관한 것만 담는다.
+  // 30초 폴링 대상이 되므로 가벼워야 한다.
+  async findProjectMeta(
+    userId: number,
+    projectId: number,
+  ): Promise<ProjectMeta> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
     if (!project) throw new NotFoundException('프로젝트가 없습니다.');
 
-    // role 취득 (가드가 멤버십은 이미 검증했지만, 뷰에 role 이 필요)
+    // role 취득. 가드가 멤버쉽은 이미 검증했지만, 프론트 화면에서 role 이 필요
     const membership = await this.prisma.membership.findUnique({
       where: { projectId_userId: { projectId, userId } },
       select: { role: true },
     });
     if (!membership) throw new NotFoundException('프로젝트가 없습니다.');
 
-    // 엔드포인트 경량 목록 (삭제 포함)
-    const endpoints = await this.prisma.endpoint.findMany({
+    const latestSnapshotId = await this.getLatestSnapshotVersion(projectId);
+
+    return {
+      id: project.id,
+      role: membership.role,
+      specJsonUrl: project.specJsonUrl,
+      tryItBaseUrl: project.tryItBaseUrl,
+      latestSnapshotId,
+    };
+  }
+
+  // GET /projects/:id/spec - 한 스냅샷의 스펙 전체
+  // requestedSnapshotId 가 없거나 최신버전 이상이면 최신 버전으로 준다.
+  async findSpec(
+    projectId: number,
+    requestedSnapshotId?: number,
+  ): Promise<Spec> {
+    const latest = await this.getLatestSnapshotVersion(projectId);
+
+    const snapshotId =
+      requestedSnapshotId === undefined || requestedSnapshotId >= latest
+        ? latest
+        : requestedSnapshotId;
+
+    const snapshotJson = await this.getSnapshotJson(projectId, snapshotId);
+
+    // 가드에서 이미 projectId를 검증했고, snapshotId도 정리되었으므로
+    // 스냅샷이 널일 경우는 존재하지 않는 이전 스냅샷 id를 보낸 경우 뿐이다.
+    if (!snapshotJson)
+      throw new NotFoundException('해당 버전의 스펙이 없습니다.');
+
+    const content = extractSnapshotContent(snapshotJson);
+
+    // 검증이 통과된 스펙만 디비에 저장되므로 실패할 일을 없겠지만
+    // 방어적으로 검사한다.
+    if (!content) throw new NotFoundException('스펙을 읽을 수 없습니다');
+
+    // 디비의 Endpoint 테이블을 순회하며 스냅샷과 조인한다.
+    // - 스냅샷에 있는 경우 : 삭제되지 않음
+    // - 스냅샷에 없는 경우 : isDeleted 이면? 삭제됨. 해당 DB row 에서 마지막 저장된 값을 가져와야 함
+    //                  : isDeleted 아니면? 이 버전의 스펙에는 아직 없는 상태. 목록에서 그냥 제외하면 된다.
+    const rows = await this.prisma.endpoint.findMany({
       where: { projectId },
-      select: {
-        id: true,
-        path: true,
-        method: true,
-        summary: true,
-        tags: true,
-        isDeleted: true,
-      },
       orderBy: { id: 'asc' },
     });
 
-    // 최신 스냅샷에서 components + snapshotId
-    const snapshot = await this.prisma.specSnapshot.findFirst({
-      where: { projectId },
-      orderBy: { id: 'desc' },
-      select: { id: true, rawJson: true },
-    });
-    const components =
-      (snapshot?.rawJson as { components?: unknown } | null)?.components ??
-      null;
+    const operations: SpecOperation[] = [];
+    for (const row of rows) {
+      const op = content.operations.get(key(row.path, row.method));
+      if (op) {
+        operations.push({
+          id: row.id,
+          path: op.path,
+          method: op.method,
+          summary: op.summary,
+          tags: op.tags,
+          isDeleted: false,
+          operationJson: op.operationJson,
+        });
+      } else if (row.isDeleted) {
+        operations.push({
+          id: row.id,
+          path: row.path,
+          method: row.method,
+          summary: row.summary,
+          tags: row.tags,
+          isDeleted: true,
+          operationJson: row.operationJson,
+        });
+      }
+    }
 
     return {
-      project: {
-        id: project.id,
-        title: project.title,
-        description: project.description,
-        version: project.version,
-        oasVersion: project.oasVersion,
-        role: membership.role,
-        isDeleted: project.isDeleted,
-      },
-      specJsonUrl: project.specJsonUrl,
-      tryItBaseUrl: project.tryItBaseUrl,
-      components,
-      snapshotId: snapshot?.id ?? 0,
-      endpoints,
+      snapshotId,
+      title: content.info.title,
+      version: content.info.version,
+      oasVersion: content.oasVersion,
+      description: content.info.description,
+      components: content.components,
+      operations,
     };
   }
 
   // PATCH /projects/:id — tryItBaseUrl 만 수정 (커밋 없음)
   async updateProject(
+    userId: number,
     projectId: number,
     dto: UpdateProjectDto,
-  ): Promise<ProjectSummary> {
-    // tryItBaseUrl update → ProjectSummary 반환 (role 은 멤버십에서)
+  ): Promise<ProjectMeta> {
     // 프로젝트 조회
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    // 프로젝트 체크
     if (!project) throw new NotFoundException('프로젝트 정보가 없습니다.');
     if (project.isDeleted)
       throw new BadRequestException('삭제된 프로젝트 입니다.');
 
-    // tryItBaseUrl update
-    const ps = await this.prisma.project.update({
+    await this.prisma.project.update({
       where: { id: projectId },
       data: { tryItBaseUrl: dto.tryItBaseUrl },
     });
 
-    return {
-      id: ps.id,
-      title: ps.title,
-      description: ps.description,
-      version: ps.version,
-      oasVersion: ps.oasVersion,
-      role: ROLE.OWNER,
-      isDeleted: ps.isDeleted,
-    };
+    return this.findProjectMeta(userId, projectId);
   }
 
   // DELETE /projects/:id — 소프트 삭제
@@ -191,7 +234,6 @@ export class ProjectsService {
 
   // POST /projects/:id/spec-commits — 스펙 업데이트
   async commitSpec(
-    userId: number,
     projectId: number,
     dto: CommitSpecDto,
   ): Promise<SpecCommitResult> {
@@ -283,7 +325,7 @@ export class ProjectsService {
     projectId: number,
     extracted: ExtractedEndpoint[],
   ): Promise<EndpointDiff> {
-    const seen = new Set(extracted.map((e) => this.key(e.path, e.method)));
+    const seen = new Set(extracted.map((e) => key(e.path, e.method)));
 
     // 기존 전체(삭제 포함) — diff 카운트와 사라진 것 판정에 사용
     const existing = await tx.endpoint.findMany({
@@ -291,7 +333,7 @@ export class ProjectsService {
       select: { id: true, path: true, method: true, isDeleted: true },
     });
     const existingMap = new Map(
-      existing.map((e) => [this.key(e.path, e.method), e]),
+      existing.map((e) => [key(e.path, e.method), e]),
     );
 
     let added = 0;
@@ -300,7 +342,7 @@ export class ProjectsService {
 
     // upsert (신규 / 갱신 / 부활)
     for (const ep of extracted) {
-      const prev = existingMap.get(this.key(ep.path, ep.method));
+      const prev = existingMap.get(key(ep.path, ep.method));
       if (!prev) added++;
       else if (prev.isDeleted) revived++;
       else updated++;
@@ -335,7 +377,7 @@ export class ProjectsService {
 
     // 이번 스펙에 없는 현존 엔드포인트 → 소프트 삭제
     const staleIds = existing
-      .filter((e) => !e.isDeleted && !seen.has(this.key(e.path, e.method)))
+      .filter((e) => !e.isDeleted && !seen.has(key(e.path, e.method)))
       .map((e) => e.id);
     let removed = 0;
     if (staleIds.length > 0) {
@@ -347,10 +389,6 @@ export class ProjectsService {
     }
 
     return { added, removed, updated, revived };
-  }
-
-  private key(path: string, method: string): string {
-    return `${method} ${path}`;
   }
 
   // SpecResult 실패를 HTTP 에러로 (code 를 실어 프론트/필터에서 분기)

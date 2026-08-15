@@ -9,7 +9,5 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [NotificationsModule], // memberships에서 NotificationService 필요
   controllers: [ProjectsController],
   providers: [ProjectsService, MembershipsService, MembershipGuard],
-  // endpoints 등 다른 모듈이 getLatestSnapshotVersion 을 쓰므로 export
-  exports: [ProjectsService],
 })
 export class ProjectsModule {}

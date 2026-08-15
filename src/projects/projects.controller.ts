@@ -7,9 +7,15 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ROLE } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MembershipGuard } from '../common/guards/membership.guard';
@@ -49,14 +55,26 @@ export class ProjectsController {
 
   // ── 계층 2: :id = projectId (+ MembershipGuard) ──
 
-  @ApiOperation({ summary: '프로젝트 진입' })
+  @ApiOperation({ summary: '프로젝트 메타' })
   @UseGuards(MembershipGuard)
   @Get(':id')
-  findProject(
+  findProjectMeta(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.projectsService.findProject(user.id, id);
+    return this.projectsService.findProjectMeta(user.id, id);
+  }
+
+  @ApiOperation({ summary: '스펙 조회 (한 스냅샷 전체)' })
+  @UseGuards(MembershipGuard)
+  @ApiQuery({ name: 'snapshotId', required: false, type: Number })
+  @Get(':id/spec')
+  findSpec(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('snapshotId', new ParseIntPipe({ optional: true }))
+    snapshotId?: number,
+  ) {
+    return this.projectsService.findSpec(id, snapshotId);
   }
 
   @ApiOperation({ summary: '[Owner] 프로젝트 수정 (tryItBaseUrl)' })
@@ -64,10 +82,11 @@ export class ProjectsController {
   @ProjectRole(ROLE.OWNER)
   @Patch(':id')
   updateProject(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateProjectDto,
   ) {
-    return this.projectsService.updateProject(id, dto);
+    return this.projectsService.updateProject(user.id, id, dto);
   }
 
   @ApiOperation({ summary: '[Owner] 프로젝트 삭제' })
@@ -83,11 +102,10 @@ export class ProjectsController {
   @ProjectRole(ROLE.OWNER)
   @Post(':id/spec-commits')
   commitSpec(
-    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CommitSpecDto,
   ) {
-    return this.projectsService.commitSpec(user.id, id, dto);
+    return this.projectsService.commitSpec(id, dto);
   }
 
   // ── 멤버십 (memberships.service 로 위임) ──
