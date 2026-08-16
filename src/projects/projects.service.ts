@@ -91,7 +91,8 @@ export class ProjectsService {
   }
 
   // GET /projects/:id - 프로젝트 메타
-  // 스펙 버전과 무관한 것만 담는다.
+  // 앵커가 있는 화면은 이 응답으로 그리지 않는다.
+  // title은 설정화면의 브레드크럼에서 써야해서 예외적으로 포함시켰다.
   // 30초 폴링 대상이 되므로 가벼워야 한다.
   async findProjectMeta(
     userId: number,
@@ -114,6 +115,7 @@ export class ProjectsService {
     return {
       id: project.id,
       role: membership.role,
+      title: project.title,
       specJsonUrl: project.specJsonUrl,
       tryItBaseUrl: project.tryItBaseUrl,
       latestSnapshotId,
@@ -133,14 +135,13 @@ export class ProjectsService {
         ? latest
         : requestedSnapshotId;
 
-    const snapshotJson = await this.getSnapshotJson(projectId, snapshotId);
+    const snapshot = await this.getSnapshot(projectId, snapshotId);
 
     // 가드에서 이미 projectId를 검증했고, snapshotId도 정리되었으므로
     // 스냅샷이 널일 경우는 존재하지 않는 이전 스냅샷 id를 보낸 경우 뿐이다.
-    if (!snapshotJson)
-      throw new NotFoundException('해당 버전의 스펙이 없습니다.');
+    if (!snapshot) throw new NotFoundException('해당 버전의 스펙이 없습니다.');
 
-    const content = extractSnapshotContent(snapshotJson);
+    const content = extractSnapshotContent(snapshot.rawJson);
 
     // 검증이 통과된 스펙만 디비에 저장되므로 실패할 일을 없겠지만
     // 방어적으로 검사한다.
@@ -148,8 +149,9 @@ export class ProjectsService {
 
     // 디비의 Endpoint 테이블을 순회하며 스냅샷과 조인한다.
     // - 스냅샷에 있는 경우 : 삭제되지 않음
-    // - 스냅샷에 없는 경우 : isDeleted 이면? 삭제됨. 해당 DB row 에서 마지막 저장된 값을 가져와야 함
-    //                  : isDeleted 아니면? 이 버전의 스펙에는 아직 없는 상태. 목록에서 그냥 제외하면 된다.
+    // - 스냅샷에 없는 경우 : isDeleted 이면서 요청 스냅샷보다 먼저 생성된 경우에만 목록에 존재해야 하고,
+    //                    DB row 에서 마지막 저장된 값을 가져와야 함
+    //                  : 그렇지 않으면 목록 자체에서 제거되어야 한다.
     const rows = await this.prisma.endpoint.findMany({
       where: { projectId },
       orderBy: { id: 'asc' },
@@ -168,7 +170,10 @@ export class ProjectsService {
           isDeleted: false,
           operationJson: op.operationJson,
         });
-      } else if (row.isDeleted) {
+      } else if (row.isDeleted && row.createdAt <= snapshot.createdAt) {
+        // 삭제된 엔드포인트는 요청 스냅샷보다 먼저 존재했었던 것들만 넣는다.
+        // 생성 시점을 비교해서 이후에 생성된 엔드포인트들은 목록에서 제외한다.
+        // Endpoint.createdAt 값은 최초 생성 시점으로 고정되기 때문에 위와 같이 비교할 수 있다.
         operations.push({
           id: row.id,
           path: row.path,
@@ -281,16 +286,12 @@ export class ProjectsService {
     return snapshot.id;
   }
 
-  // 특정 스냅샷의 원본 json
-  async getSnapshotJson(
-    projectId: number,
-    snapshotId: number,
-  ): Promise<unknown> {
-    const snapshot = await this.prisma.specSnapshot.findFirst({
+  // 특정 스냅샷의 원본 json과 생성 시점
+  private async getSnapshot(projectId: number, snapshotId: number) {
+    return this.prisma.specSnapshot.findFirst({
       where: { id: snapshotId, projectId },
-      select: { rawJson: true },
+      select: { rawJson: true, createdAt: true },
     });
-    return snapshot?.rawJson ?? null;
   }
 
   // ── 공유 tx 헬퍼 (createProject / commitSpec 공용, 트랜잭션 열지 않음) ──

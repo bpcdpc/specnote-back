@@ -189,12 +189,13 @@ type ProjectSummary = {
 };
 
 // GET /api/projects/:id 응답
-// 스펙 버전과 무관한 것만 담는다. 커밋으로 값이 바뀌는 필드(title, version 등)는
-// 전부 Spec 으로 — 이 응답은 30초 폴링 대상이라, 여기 실린 값이 화면에
-// 그려지면 앵커에 고정된 스펙 화면과 어긋난다.
+// 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다 — 거기는 spec 만 그린다.
+// 30초 폴링 대상이라, 여기 실린 값을 스펙 화면에 그리면 앵커에 고정된 내용과 어긋난다.
+// title 만 예외다 — 앵커가 없는 설정 화면 브레드크럼 전용이고, 거기서는 최신이 정답이다.
 type ProjectMeta = {
   id: number;
   role: ROLE;
+  title: string;
   specJsonUrl: string;
   tryItBaseUrl: string | null;
   latestSnapshotId: number; // 서버의 현재 최신 스냅샷. 배너 판정 전용(FR-10.6)
@@ -210,6 +211,7 @@ type SpecOperation = {
   isDeleted: boolean;
   // 살아 있는 엔드포인트는 요청 스냅샷의 rawJson 에서,
   // 삭제된 엔드포인트는 Endpoint 행에 남은 마지막 생존 시점 값에서 온다
+  // (삭제 후에는 갱신이 멈추므로 "현재 값"이 아니라 "얼어붙은 값"이다)
   operationJson: unknown;
 };
 
@@ -267,6 +269,8 @@ type MemberView = {
 - Response `200`: `ProjectMeta`
 - 비고: 프론트가 30초 간격으로 폴링해 `latestSnapshotId`로 스펙 갱신을 감지한다(FR-10.6).
   스펙 내용은 `GET /api/projects/:id/spec`이 담당한다
+- 비고: `title`은 설정 화면 브레드크럼 전용이다. 스펙 화면의 프로젝트명은 `Spec.title`을 쓴다 —
+  같은 값이지만 읽는 시점이 다르다(meta는 폴링이라 최신, spec은 앵커 시점)
 
 ### `GET /api/projects/:id/spec` — 스펙 조회 (한 스냅샷 전체)
 
@@ -279,18 +283,24 @@ type MemberView = {
 
 **operations 조립 — 출처가 엔드포인트 상태로 유일하게 정해진다**
 
-| Endpoint 행       | 요청 스냅샷의 paths | 결과                                                            |
-| ----------------- | ------------------- | --------------------------------------------------------------- |
-| 있음              | 있음                | 산 것. 내용은 스냅샷, `id`는 행. `isDeleted: false`             |
-| `isDeleted: true` | 없음                | 삭제분. 행에 남은 마지막 생존 시점 값 그대로. `isDeleted: true` |
-| 살아 있음         | 없음                | 그 버전에 아직 없던 것. **목록에서 제외**                       |
+| Endpoint 행       | 요청 스냅샷의 paths | 행의 생성 시점  | 결과                                                            |
+| ----------------- | ------------------- | --------------- | --------------------------------------------------------------- |
+| 있음              | 있음                | —               | 산 것. 내용은 스냅샷, `id`는 행. `isDeleted: false`             |
+| `isDeleted: true` | 없음                | 스냅샷보다 먼저 | 삭제분. 행에 남은 마지막 생존 시점 값 그대로. `isDeleted: true` |
+| `isDeleted: true` | 없음                | 스냅샷보다 나중 | 그 버전에 없던 것. **목록에서 제외**                            |
+| 살아 있음         | 없음                | —               | 그 버전에 아직 없던 것. **목록에서 제외**                       |
 
 최신을 넘는 `snapshotId`는 에러가 아니라 최신으로 처리한다. 프론트 캐시가
 서버보다 앞설 수 없으므로, 앞서는 값은 조작이거나 무의미한 요청이다.
 
 - 참고: 삭제된 엔드포인트의 표시 내용은 **마지막 생존 시점 기준**이며 요청 스냅샷을
   따르지 않는다. 그 버전 스펙에 존재하지 않았던 것의 "그 버전 값"이란 없다 —
-  삭제 표시가 붙은 아카이브 사본이다
+  삭제 표시가 붙은 아카이브 사본이다.
+- 참고: 생성 시점 비교는 `Endpoint.createdAt`과 `SpecSnapshot.createdAt`으로 한다.
+  `Endpoint.createdAt`은 `syncEndpoints`의 `upsert`가 `update` 절에서 건드리지 않아
+  최초 등장 시점으로 고정된다(소프트 삭제 후 부활해도 바뀌지 않는다). 이 조건이 없으면
+  스냅샷 N 이후에 생겼다가 삭제된 엔드포인트가 `?snapshotId=N` 응답에 섞인다 —
+  그 시점에 존재하지 않았던 것이다.
 
 ### `PATCH /api/projects/:id` — 프로젝트 수정 `[Owner]`
 

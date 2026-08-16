@@ -18,11 +18,14 @@ export type ProjectSummary = {
   isDeleted: boolean;
 };
 
-// 프로젝트 내용중에 스펙 버전과 무관한 내용만 모은 응답 타입
+// 프로젝트 내용중 앵커와 무관한 것들
 // 이 응답은 프론트에서 30초 폴링 대상이 된다.
+// title은 스펙 커밋으로 바뀌지만 앵커가 없는 설정화면에서 그려줘야 하기 때문에
+// 이 응답에 실어줄 수 밖에 없다.
 export type ProjectMeta = {
   id: number;
   role: ROLE;
+  title: string;
   specJsonUrl: string;
   tryItBaseUrl: string | null;
   // 서버의 현재 최신 스냅샷. 배너 판정 전용(FR-10.6).
@@ -40,7 +43,7 @@ export type SpecOperation = {
   tags: string[];
   isDeleted: boolean;
   // 삭제되지 않은 엔드포인트는 요청받은 snapshot의 rawJson에서,
-  // 삭제된 엔드포인트는 디비의 Endpoint 테이블의 현재 시점 값에서 꺼내 쓴다.
+  // 삭제된 엔드포인트는 디비의 Endpoint 테이블에 저장된 마지막 값에서 꺼내 쓴다.
   operationJson: unknown;
 };
 

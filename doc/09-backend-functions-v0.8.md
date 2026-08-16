@@ -181,18 +181,22 @@ commitSpec(projectId: number, dto: CommitSpecDto): Promise<SpecCommitResult>
 findMyProjects(userId: number): Promise<ProjectSummary[]>
 
 findProjectMeta(userId: number, projectId: number): Promise<ProjectMeta>
-// 스펙 버전과 무관한 것만 담는다(설정, 권한, latestSnapshotId).
-// 프론트가 30초 폴링해 배너를 판정하므로 가볍게 유지한다.
+// 설정, 권한, latestSnapshotId, title. 프론트가 30초 폴링해 배너를 판정하므로
+// 가볍게 유지한다.
+// 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다 — 거기는 spec 만 그린다.
+// title 만 예외다. 커밋으로 바뀌는 값이지만 앵커가 없는 설정 화면 브레드크럼이
+// 프로젝트명을 표시할 출처가 여기뿐이고, 그 화면에서는 최신값이 정답이다.
 // userId는 role 조회용 — 가드가 멤버십은 검증했지만 응답에 role이 필요하다.
 
 findSpec(projectId: number, requestedSnapshotId?: number): Promise<Spec>
 // 한 스냅샷의 전부. 없거나 최신 이상이면 최신으로 클램프.
-// getSnapshotJson → extractSnapshotContent → Endpoint 행 순회 조인:
-//   - 스냅샷에 있음        → 산 것. 내용은 스냅샷, id는 행. isDeleted: false
-//   - 없고 행이 isDeleted  → 삭제분. 행에 남은 마지막 생존 시점 값(백업)
-//   - 없고 행이 살아 있음   → 그 버전에 아직 없던 것. 목록에서 제외
-// 조인 키는 key() 하나를 거친다 — 만드는 쪽과 찾는 쪽이 다른 형태로
-// 조립하면 전부 miss가 되므로.
+// getSnapshot → extractSnapshotContent → Endpoint 행 순회 조인:
+//   - 스냅샷에 있음                       → 산 것. 내용은 스냅샷, id는 행. isDeleted: false
+//   - 없고 행이 isDeleted, 스냅샷보다 먼저 생성 → 삭제분. 행에 남은 마지막 생존 시점 값(백업)
+//   - 그 외                              → 그 버전에 아직 없던 것. 목록에서 제외
+// createdAt 비교 근거 — Endpoint.createdAt 은 upsert 의 update 절이 건드리지
+// 않아 최초 등장 시점으로 고정된다(부활해도 안 바뀐다).
+// 조인 키는 key() 하나를 거친다 — 만드는 쪽과 찾는 쪽이 다른 형태로 조립하면 전부 miss가 되므로.
 
 updateProject(userId: number, projectId: number, dto: UpdateProjectDto): Promise<ProjectMeta>
 // Owner만 권한을 가짐. tryItBaseUrl 수정할 때에 타는 라우트. 커밋 없음.
@@ -213,10 +217,12 @@ private syncEndpoints(tx: Prisma.TransactionClient, projectId: number, extracted
 // upsert + 소프트 삭제 + 간략한 카운트 정도만 담긴 diff 반환
 
 getLatestSnapshotVersion(projectId: number): Promise<number>
-// 최신 SpecSnapshot.id. projects 소유 확정(스냅샷 도메인). endpoints는 projectsService 주입으로 사용
+// 최신 SpecSnapshot.id. projects 소유 확정(스냅샷 도메인).
 
-getSnapshotJson(projectId: number, snapshotId: number): Promise<unknown>
-// 특정 SpecSnapshot.rawJson. 없으면 null. findSpec 전용(v0.8).
+private getSnapshot(projectId: number, snapshotId: number)
+// 특정 SpecSnapshot 의 rawJson 과 createdAt. 없으면 null. findSpec 전용.
+// 반환 타입을 적지 않는다 — Prisma 추론에 맡겨 select 를 고칠 때
+// 두 곳을 맞출 일을 없앤다.
 // where 에 projectId 를 함께 건다 — 가드는 URL 의 :id(프로젝트)만 검증하고
 // 쿼리 파라미터는 지키지 못하므로, id 단독 조회를 두면 임의의 snapshotId 로
 // 타 프로젝트 스펙 전문을 읽는 경로가 열린다.
@@ -631,11 +637,13 @@ type MemberView = {
 };
 // Prisma Membership 원형을 주지 않는다. 근거는 3절 memberships.service 참고.
 
-// GET /api/projects/:id 응답 — 스펙 버전과 무관한 것만.
-// 30초 폴링 대상이라, 커밋으로 바뀌는 필드가 실리면 앵커에 고정된 스펙 화면과 어긋난다
+// GET /api/projects/:id 응답 — 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다.
+// 30초 폴링 대상이라, 여기 실린 값을 스펙 화면에 그리면 앵커에 고정된 내용과 어긋난다.
+// title 만 예외다 — 앵커가 없는 설정 화면 브레드크럼 전용이고, 거기서는 최신이 정답이다.
 type ProjectMeta = {
   id: number;
   role: ROLE;
+  title: string;
   specJsonUrl: string;
   tryItBaseUrl: string | null;
   latestSnapshotId: number; // 서버의 현재 최신 스냅샷. 배너 판정 전용(FR-10.6)
@@ -658,6 +666,8 @@ type SpecOperation = {
   isDeleted: boolean;
   // 살아 있는 엔드포인트는 요청 스냅샷의 rawJson 에서,
   // 삭제된 엔드포인트는 Endpoint 행에 남은 마지막 생존 시점 값에서 온다
+  // (삭제 후에는 갱신이 멈추므로 "현재 값"이 아니라 "얼어붙은 값"이다).
+  // 삭제분은 요청 스냅샷보다 먼저 생성된 것만 실린다 — 3절 findSpec 참고
   operationJson: unknown;
 };
 
