@@ -1,4 +1,10 @@
-import { type SpecDocument, ExtractedEndpoint, SpecInfo } from './spec.type';
+import {
+  type SpecDocument,
+  ExtractedEndpoint,
+  SnapshotContent,
+  SnapshotOperation,
+  SpecInfo,
+} from './spec.type';
 import { Prisma } from '@prisma/client';
 
 const HTTP_METHODS = [
@@ -52,28 +58,60 @@ export function extractEndpoints(spec: SpecDocument): ExtractedEndpoint[] {
   return results;
 }
 
+// 스냅샷 rawJson에서 Spec을 만들 재료를 한번에 꺼낸다.
+//
+// extractSpecInfo / extractEndpoints 와 달리 SpecDocument를 받지 않는다.
+// 디비에서 읽은 값이라 구조가 보장되지 않는다.
+export function extractSnapshotContent(
+  rawJson: unknown,
+): SnapshotContent | null {
+  if (!isObject(rawJson)) return null;
+
+  const info = isObject(rawJson.info) ? rawJson.info : {};
+  const paths = isObject(rawJson.paths) ? rawJson.paths : {};
+
+  const operations = new Map<string, SnapshotOperation>();
+
+  for (const [path, pathItem] of Object.entries(paths)) {
+    if (!isObject(pathItem)) continue;
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!isObject(operation)) continue;
+      operations.set(key(path, method), {
+        path,
+        method,
+        summary:
+          typeof operation.summary === 'string' ? operation.summary : null,
+        tags: Array.isArray(operation.tags)
+          ? operation.tags.filter((t): t is string => typeof t === 'string')
+          : [],
+        operationJson: operation,
+      });
+    }
+  }
+
+  return {
+    info: {
+      title: typeof info.title === 'string' ? info.title : '',
+      version: typeof info.version === 'string' ? info.version : '',
+      description:
+        typeof info.description === 'string' ? info.description : null,
+    },
+    oasVersion: typeof rawJson.openapi === 'string' ? rawJson.openapi : '',
+    components: rawJson.components ?? null,
+    operations,
+  };
+}
+
+// 객체인지 검사 (typeof가 배열과 널도 'object'로 반환하므로 별도 함수로 검사해준다.)
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// 스냅샷 rawJson에서 한개의 operation을 꺼낸다.
-// extractEndpoints는 스펙 파싱 과정에서 validation이 끝난, 메모리에 올라와 있는 spec을 받지만,
-// 여기는 디비에 저장된 rawJson을 가져와야 하기 때문에 타입을 단언하면 런타임에서 발생하는 에러를 막지 못한다.
-// 현실적으로는 validation이 끝난 spec 문서를 디비에 저장하기 때문에 문제가 발생하지 않겠지만,
-// 논리적으로는 읽기 경로에서 타입이 보장된다고 할 수 없다.
-export function extractOperation(
-  rawJson: unknown,
-  path: string,
-  method: string,
-): Record<string, unknown> | null {
-  if (!isObject(rawJson)) return null;
-
-  const paths = rawJson.paths;
-  if (!isObject(paths)) return null;
-
-  const pathItem = paths[path];
-  if (!isObject(pathItem)) return null;
-
-  const operation = pathItem[method];
-  return isObject(operation) ? operation : null;
+// Endpoint 동일성 키.
+// 만드는 쪽 (extractSnapshotContent) 과 찾는 쪽 (findSpec, syncEndpoints) 이
+// 모두 같은 키로 읽고 쓸 수 있도록 보장한다.
+export function key(path: string, method: string): string {
+  return `${path} ${method}`;
 }

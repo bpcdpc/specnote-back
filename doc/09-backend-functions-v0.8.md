@@ -9,6 +9,7 @@
 | v0.5 | 2026.07.21 TUE 00:00 | syncMemberMentions 시그니처에 senderId 추가(4인자, 알림 발신자), sync 계열 주석을 "검증된 id만 받음·전량 교체·신규분만 알림"으로 정정. summarizeThread 시그니처 (actorUserId, endpointId) → (endpointId, projectId). CommentView에 isAiGenerated 추가. SummaryInput.createdAt Date → string(다른 뷰 타입과 통일해 개발자 인식 편의). toggleReaction 서비스 시그니처 정의에 projectId 반영(v0.4 라우트표엔 있었으나 정의 줄 누락분). updateComment 주석 content만 → content 및 멘션 수정 가능. CreateNotificationDto에 senderId 추가(코드·10 명세 Notification 원형·syncMemberMentions senderId와 정합). users.service 반환타입 User → PublicUser 정정(정의 블록 누락분, password 제외 반영). findByEmail 주석에 AI 계정 제외 명시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | v0.6 | 2026.07.27 MON       | **코드 실측 대조 반영.** `GET /api/users/me`(`findMe`) 신설 — 구현 완료분이 누락돼 있었다. `findMe`는 `findById`를 감싸 null이면 `UnauthorizedException`(401)을 던진다(조회와 throw 판단 분리, 컨트롤러는 순수 위임). **댓글 이동을 엔드포인트 단위로 전환**(FR-12 v0.7) — `moveThread(commentId, dto)` → `moveComments(endpointId, projectId, dto)`, 라우트 `PATCH /api/comments/:id/move` → `PATCH /api/endpoints/:id/comments/move`, 소속 컨트롤러도 comments → **endpoints**로 이동(`:id`가 endpointId라 `@ProjectScope('endpoint')`가 필요). 대댓글 단독 이동 개념이 사라져 관련 400 조항 삭제. `updateComment`/`softDeleteComment`에 **이미 삭제된 댓글 400** 추가. `updateComment`의 `projectId` 확보 경로(comment 행 self-lookup) 명시. AI 요약 답글 차단이 `normalizeReply` 내부임을 명시. **`findMembers` 반환을 `MemberView[]`로 전환** — Prisma `Membership` 원형에는 `userName`이 없어 프론트 멤버 칩과 멘션 후보를 그릴 수 없었다. `select`로 `role` + `user`만 뽑는다. `inviteMember`/`removeMember`/`getMembership`은 원형 유지. **`UserRef` / `EndpointRef` 경량 참조 타입 신설** — `CommentView`의 멘션 두 필드가 인라인 익명 타입이었는데 `ReactionSummary.users`가 같은 모양을 쓰게 되어 이름을 붙였다. `MemberMention`이 아닌 이유는 리액션을 남긴 사람이 멘션된 사람이 아니기 때문이다. `ReactionSummary`에 **`users` 추가**(리액션을 남긴 사람 목록) — findComments 의 reactions include 를 최상위·replies 양쪽에서 user 포함으로 바꾸고 summarizeReactions 가 적재한다. `MemberView` 정의 위치를 `projects/projects.type.ts`로 명시. findComments·summarizeReactions 서술 보강. **`ai-summary.service.ts`·`ai.service.ts` 절 보강** — 이전 AI 요약을 수집 대상에서 제외, 댓글 0건 400, AI 호출 실패는 받은 에러를 그대로 재던짐(400 변환 금지), `findAiUser` 부재는 500. — 필수 환경변수 3종과 생성자에서 던지는 동작(미설정 시 앱 부팅 실패), 모델 파라미터, 실패 시 500 명시. |
 | v0.7 | 2026.08.13 THU       | **스냅샷 지정 조회 도입.** `findEndpointDetail(endpointId, projectId, requestedSnapshotId?)` — 요청 스냅샷이 최신보다 낮으면 `SpecSnapshot.rawJson`에서 operation을 꺼내 응답 전체를 그 버전으로 맞춘다(FR-10.6). `projectId`는 `@CurrentProjectId` 주입 — 가드가 검증한 값으로 스냅샷 조회를 스코프해야 타 프로젝트 스펙 열람이 막힌다. **`getSnapshotJson(projectId, snapshotId)` 신설**(projects 소유, endpoints가 주입해 사용), **`extractOperation(rawJson, path, method)` 신설**(spec-extractor). `EndpointDetail.snapshotId`를 "이 응답이 나온 스냅샷"으로 재정의하고 배너 판정용 최신값은 **`latestSnapshotId`로 분리**. 그 스냅샷에 없는 엔드포인트는 404 `NOT_IN_SNAPSHOT`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| v0.8 | 2026.08.15 SAT       | **스펙 조회를 스냅샷 단위 단일 응답으로 재편.** `findProject`를 **`findProjectMeta`**(설정, 권한, `latestSnapshotId` — 폴링 대상이라 커밋으로 바뀌는 필드 없음)와 **`findSpec(projectId, snapshotId?)`**(한 스냅샷의 전부 — info 메타, components, 전체 operation)로 분리. `findSpec`의 operations는 `Endpoint` 행을 순회하며 요청 스냅샷과 조인해 조립한다 — 산 것은 스냅샷에서, 삭제분은 행에 남은 마지막 생존 시점 백업에서. **`Endpoint` 스펙 사본(operationJson, operationId, summary, tags)의 의미 재정의** — "최신 캐시"가 아니라 **삭제 대비 백업**이다. 살아 있는 동안 매 커밋 덮어써지다 삭제되면 마지막 값으로 얼어붙고, 산 것을 조회할 때는 아무도 읽지 않는다. **endpoints 모듈 삭제**(`findEndpointDetail`, `EndpointDetail`, `extractOperation` 제거) — 상세 조회가 spec 응답에 흡수됐다. **`extractSnapshotContent`, `key()` 신설**(spec-extractor) — 조인 키를 한 함수로 통일해 만드는 쪽과 찾는 쪽이 갈리는 버그를 구조로 막는다. `createProject`/`updateProject` 반환을 `ProjectMeta`로, `updateProject(userId, ...)` 시그니처 변경(role 조회에 필요), `commitSpec`에서 미사용 `userId` 제거. `SpecSnapshot`에 `@@index([projectId, id])` — 메타 폴링이 `getLatestSnapshotVersion`을 상시 돌리므로 필요해졌다. compression 미들웨어 추가.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ---
 
@@ -128,22 +129,26 @@ findMe(id: number): Promise<PublicUser>
 
 ### 컨트롤러 projects.controller.ts
 
-| 라우트                                               | 함수                          | 입력                                        | 출력                        |
-| ---------------------------------------------------- | ----------------------------- | ------------------------------------------- | --------------------------- |
-| `POST /api/projects`                                 | `createProject(user, dto)`    | `AuthUser`, `CreateProjectDto`              | `Promise<ProjectView>`      |
-| `GET /api/projects`                                  | `findMyProjects(user)`        | `AuthUser`                                  | `Promise<ProjectSummary[]>` |
-| `GET /api/projects/:id`                              | `findProject(user, id)`       | `AuthUser`, `number`                        | `Promise<ProjectView>`      |
-| `PATCH /api/projects/:id` `[Owner]`                  | `updateProject(id, dto)`      | `number`, `UpdateProjectDto`                | `Promise<ProjectSummary>`   |
-| `DELETE /api/projects/:id` `[Owner]`                 | `softDeleteProject(id)`       | `number`                                    | `Promise<void>`             |
-| `POST /api/projects/:id/spec-commits` `[Owner]`      | `commitSpec(user, id, dto)`   | `AuthUser`, `number`, `CommitSpecDto`       | `Promise<SpecCommitResult>` |
-| `POST /api/projects/:id/members` `[Owner]`           | `inviteMember(user, id, dto)` | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>`       |
-| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(id, userId)`    | `number`, `number`                          | `Promise<Membership>`       |
-| `GET /api/projects/:id/members`                      | `findMembers(id)`             | `number`                                    | `Promise<Membership[]>`     |
+| 라우트                                               | 함수                           | 입력                                        | 출력                        |
+| ---------------------------------------------------- | ------------------------------ | ------------------------------------------- | --------------------------- |
+| `POST /api/projects`                                 | `createProject(user, dto)`     | `AuthUser`, `CreateProjectDto`              | `Promise<ProjectMeta>`      |
+| `GET /api/projects`                                  | `findMyProjects(user)`         | `AuthUser`                                  | `Promise<ProjectSummary[]>` |
+| `GET /api/projects/:id`                              | `findProjectMeta(user, id)`    | `AuthUser`, `number`                        | `Promise<ProjectMeta>`      |
+| `GET /api/projects/:id/spec`                         | `findSpec(id, snapshotId?)`    | `number`, `number?`                         | `Promise<Spec>`             |
+| `PATCH /api/projects/:id` `[Owner]`                  | `updateProject(user, id, dto)` | `AuthUser`, `number`, `UpdateProjectDto`    | `Promise<ProjectMeta>`      |
+| `DELETE /api/projects/:id` `[Owner]`                 | `softDeleteProject(id)`        | `number`                                    | `Promise<void>`             |
+| `POST /api/projects/:id/spec-commits` `[Owner]`      | `commitSpec(id, dto)`          | `number`, `CommitSpecDto`                   | `Promise<SpecCommitResult>` |
+| `POST /api/projects/:id/members` `[Owner]`           | `inviteMember(user, id, dto)`  | `AuthUser`, `number`, `CreateMembershipDto` | `Promise<Membership>`       |
+| `DELETE /api/projects/:id/members/:userId` `[Owner]` | `removeMember(id, userId)`     | `number`, `number`                          | `Promise<Membership>`       |
+| `GET /api/projects/:id/members`                      | `findMembers(id)`              | `number`                                    | `Promise<Membership[]>`     |
+
+> `findSpec`의 `snapshotId`는 `@Query('snapshotId', new ParseIntPipe({ optional: true }))`.
+> Swagger 플러그인이 메서드 파라미터의 optional을 못 읽으므로 `@ApiQuery({ required: false })`를 명시한다.
 
 ### 서비스 projects.service.ts
 
 ```tsx
-createProject(ownerId: number, dto: CreateProjectDto): Promise<ProjectView>
+createProject(ownerId: number, dto: CreateProjectDto): Promise<ProjectMeta>
 // [트랜잭션 밖]
 //   1. loadSpec(dto.specJsonUrl)
 //          → 실패(!ok)시 code별 BadRequestException throw
@@ -154,8 +159,11 @@ createProject(ownerId: number, dto: CreateProjectDto): Promise<ProjectView>
 //   4. 프로젝트 생성 (메타를 인라인으로 대입)
 //   5. Owner 멤버십 생성
 //   6. applySpecCommit(tx, projectId, extracted, rawJson)
+// 반환은 findProjectMeta 재사용 — 프론트는 생성 응답에서 이동용 id만 읽는다.
+// 진입 화면이 meta와 spec을 각자 받아오므로 스펙 전체를 돌려줄 이유가 없다.
 
-commitSpec(userId: number, projectId: number, dto: CommitSpecDto): Promise<SpecCommitResult>
+commitSpec(projectId: number, dto: CommitSpecDto): Promise<SpecCommitResult>
+// userId를 받지 않는다 — 인가는 가드 전담이고 작성자 기록도 없다(v0.8).
 // POST /spec-commits 라우트.
 // specJsonUrl 변경 여부와 상관없이 사용자가 "Spec Update" 버튼을 누르면 실행되는 라우트입니다.
 // 전체 프로젝트에서 앞으로 이 행위를 "spec update", 또는 "스펙 업데이트" 라고 부른다.
@@ -172,11 +180,27 @@ commitSpec(userId: number, projectId: number, dto: CommitSpecDto): Promise<SpecC
 
 findMyProjects(userId: number): Promise<ProjectSummary[]>
 
-findProject(userId: number, projectId: number): Promise<ProjectView>
-// 메타 + 엔드포인트 목록 전체 + 프론트엔드에서 캐시할 정보: components, snapshotId
+findProjectMeta(userId: number, projectId: number): Promise<ProjectMeta>
+// 설정, 권한, latestSnapshotId, title. 프론트가 30초 폴링해 배너를 판정하므로
+// 가볍게 유지한다.
+// 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다 — 거기는 spec 만 그린다.
+// title 만 예외다. 커밋으로 바뀌는 값이지만 앵커가 없는 설정 화면 브레드크럼이
+// 프로젝트명을 표시할 출처가 여기뿐이고, 그 화면에서는 최신값이 정답이다.
+// userId는 role 조회용 — 가드가 멤버십은 검증했지만 응답에 role이 필요하다.
 
-updateProject(projectId: number, dto: UpdateProjectDto): Promise<ProjectSummary>
-// Owner만 권한을 가짐. tryItBaseUrl 수정할 때에 타는 라우트. 커밋 없음
+findSpec(projectId: number, requestedSnapshotId?: number): Promise<Spec>
+// 한 스냅샷의 전부. 없거나 최신 이상이면 최신으로 클램프.
+// getSnapshot → extractSnapshotContent → Endpoint 행 순회 조인:
+//   - 스냅샷에 있음                       → 산 것. 내용은 스냅샷, id는 행. isDeleted: false
+//   - 없고 행이 isDeleted, 스냅샷보다 먼저 생성 → 삭제분. 행에 남은 마지막 생존 시점 값(백업)
+//   - 그 외                              → 그 버전에 아직 없던 것. 목록에서 제외
+// createdAt 비교 근거 — Endpoint.createdAt 은 upsert 의 update 절이 건드리지
+// 않아 최초 등장 시점으로 고정된다(부활해도 안 바뀐다).
+// 조인 키는 key() 하나를 거친다 — 만드는 쪽과 찾는 쪽이 다른 형태로 조립하면 전부 miss가 되므로.
+
+updateProject(userId: number, projectId: number, dto: UpdateProjectDto): Promise<ProjectMeta>
+// Owner만 권한을 가짐. tryItBaseUrl 수정할 때에 타는 라우트. 커밋 없음.
+// 반환은 findProjectMeta 재사용 — role 하드코딩을 없애고 응답 조립처를 한 곳으로.
 
 softDeleteProject(projectId: number): Promise<void>
 // 소프트 딜리트 : isDeleted = true
@@ -193,12 +217,15 @@ private syncEndpoints(tx: Prisma.TransactionClient, projectId: number, extracted
 // upsert + 소프트 삭제 + 간략한 카운트 정도만 담긴 diff 반환
 
 getLatestSnapshotVersion(projectId: number): Promise<number>
-// 최신 SpecSnapshot.id. projects 소유 확정(스냅샷 도메인). endpoints는 projectsService 주입으로 사용
+// 최신 SpecSnapshot.id. projects 소유 확정(스냅샷 도메인).
 
-getSnapshotJson(projectId: number, snapshotId: number): Promise<unknown>
-// 특정 SpecSnapshot.rawJson. 없으면 null.
-// where 에 projectId 를 함께 건다 — MembershipGuard 는 endpointId 로만 프로젝트를 확정하므로,
-// id 단독 조회를 두면 임의의 snapshotId 로 타 프로젝트 스펙 전문을 읽는 경로가 열린다.
+private getSnapshot(projectId: number, snapshotId: number)
+// 특정 SpecSnapshot 의 rawJson 과 createdAt. 없으면 null. findSpec 전용.
+// 반환 타입을 적지 않는다 — Prisma 추론에 맡겨 select 를 고칠 때
+// 두 곳을 맞출 일을 없앤다.
+// where 에 projectId 를 함께 건다 — 가드는 URL 의 :id(프로젝트)만 검증하고
+// 쿼리 파라미터는 지키지 못하므로, id 단독 조회를 두면 임의의 snapshotId 로
+// 타 프로젝트 스펙 전문을 읽는 경로가 열린다.
 // 클라이언트가 보낸 값이 틀릴 수 있는 자리라 던지지 않고 null 을 낸다
 // (getLatestSnapshotVersion 은 스냅샷 부재가 불변식 위반이라 방어적으로 던진다).
 ```
@@ -254,49 +281,40 @@ extractSpecInfo(rawJson: SpecDocument): SpecInfo
 extractEndpoints(rawJson: SpecDocument): ExtractedEndpoint[]
 // endpoint 목록 추출
 
-extractOperation(rawJson: unknown, path: string, method: string): Record<string, unknown> | null
-// 스냅샷 rawJson 에서 operation 하나를 꺼낸다.
-// extractEndpoints 와 달리 SpecDocument 를 받지 않는다
+extractSnapshotContent(rawJson: unknown): SnapshotContent | null
+// 스냅샷 rawJson 에서 Spec 조립 재료(info, components, 전체 operation Map)를
+// 한 번에 꺼낸다. extractEndpoints 와 달리 SpecDocument 를 받지 않는다 —
 // 거기는 validate 를 통과해 메모리에 올라온 spec 을 받지만,
 // 여기는 디비에서 읽은 값이라 구조가 보장되지 않는다.
 // 검증 통과분만 저장되므로 형태는 맞겠지만
 // 그것은 저장할 때 지킨 규칙이지 읽어온 값의 타입이 보장되는 것이 아니다.
 // isObject 로 한 단계씩 좁혀간다.
+
+key(path: string, method: string): string
+// Endpoint 동일성 키. 만드는 쪽(extractSnapshotContent)과 찾는 쪽
+// (findSpec, syncEndpoints)이 서로 다른 형태로 조립하면 조인이 전부
+// miss 가 되므로, 반드시 이 함수를 거친다.
 ```
 
 - DTO: `CreateProjectDto`, `UpdateProjectDto`, `CommitSpecDto`, `CreateMembershipDto`
 
 ---
 
-## 4. `endpoints/` — 엔드포인트 R (DTO 없음)
+## 4. `endpoints/` — 모듈 없음 (v0.8에서 삭제)
 
-### 컨트롤러 endpoints.controller.ts
+엔드포인트 단독 조회가 spec 응답에 흡수되면서 이 모듈의 존재 이유가 사라졌다.
+`findEndpointDetail`, `EndpointDetail`, `extractOperation`, 모듈 네 파일 전부 삭제.
 
-| 라우트                   | 함수                                             | 입력                          | 출력                      |
-| ------------------------ | ------------------------------------------------ | ----------------------------- | ------------------------- |
-| `GET /api/endpoints/:id` | `findEndpointDetail(id, projectId, snapshotId?)` | `number`, `number`, `number?` | `Promise<EndpointDetail>` |
+**`Endpoint` 테이블과 도메인은 남는다** — 댓글 앵커(버전을 관통하는 id)와
+삭제 대비 백업이 역할이다. `syncEndpoints`(projects 소유)가 계속 관리한다.
+스펙 사본(operationJson, operationId, summary, tags)은 살아 있는 동안
+매 커밋 덮어써지다가, 삭제되면 마지막 생존 시점 값으로 얼어붙는다.
+산 것을 조회할 때는 아무도 이 사본을 읽지 않는다 — 산 것의 유일한 출처는
+`SpecSnapshot.rawJson`이다. 그래서 한 엔드포인트의 출처가 상태(생존/삭제)로
+유일하게 정해지고, 한 응답 안에서 버전이 갈릴 경로가 없다.
 
-> `projectId`는 `@CurrentProjectId`, `snapshotId`는 `@Query('snapshotId', new ParseIntPipe({ optional: true }))`.
-
-### 서비스 endpoints.service.ts
-
-```tsx
-findEndpointDetail(endpointId: number, projectId: number, requestedSnapshotId?: number): Promise<EndpointDetail>
-// requestedSnapshotId 가 최신보다 낮으면 그 스냅샷 기준으로 응답한다(FR-10.6).
-// 배너가 떠 있는 동안 프론트는 캐시된 옛 스냅샷을 앵커로 들고 있고 사이드바도 그 버전이다.
-// latestSnapshotId 는 항상 getLatestSnapshotVersion(projectsService 주입)으로 취득한다.
-```
-
-| 요청 `snapshotId`  | 스펙 필드 출처          | `isDeleted`   |
-| ------------------ | ----------------------- | ------------- |
-| 생략 / `>= latest` | `Endpoint` 행           | `Endpoint` 행 |
-| `< latest`         | `extractOperation` 결과 | `false`       |
-
-`Endpoint` 행에서 그대로 쓰는 것은 `id`, `path`, `method` 셋뿐이다. 이 셋은 동일성 키(`@@unique([projectId, path, method])`)라 `syncEndpoints`의 `update` 절에 없어 버전과 무관하다. 나머지 스펙 필드는 커밋마다 덮어써지므로 옛 버전은 `SpecSnapshot.rawJson`에서 꺼낸다.
-
-`< latest` 갈래에서 `isDeleted`를 `false`로 고정하는 것은 `syncEndpoints`가 "이번 스펙에 없는 것"을 소프트 삭제하는 규칙의 역산이다. 스냅샷에 operation이 없으면 `NOT_IN_SNAPSHOT`으로 갈리므로 `true`가 나올 경로가 없다.
-
-응답 `snapshotId`, 폴백 규칙, 에러 응답 형태는 10-api 4장 참조.
+`/api/endpoints/:id/...` 경로는 댓글 계열 라우트(5장)가 계속 쓴다 —
+`@ProjectScope('endpoint')` 역참조는 가드(common) 소관이라 이 변경과 무관하다.
 
 ---
 
@@ -619,14 +637,16 @@ type MemberView = {
 };
 // Prisma Membership 원형을 주지 않는다. 근거는 3절 memberships.service 참고.
 
-// 프로젝트 진입 응답
-type ProjectView = {
-  project: ProjectSummary; // 메타
+// GET /api/projects/:id 응답 — 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다.
+// 30초 폴링 대상이라, 여기 실린 값을 스펙 화면에 그리면 앵커에 고정된 내용과 어긋난다.
+// title 만 예외다 — 앵커가 없는 설정 화면 브레드크럼 전용이고, 거기서는 최신이 정답이다.
+type ProjectMeta = {
+  id: number;
+  role: ROLE;
+  title: string;
   specJsonUrl: string;
   tryItBaseUrl: string | null;
-  components: unknown; // components JSON. 서버는 전달만 하고, 프론트가 캐싱 + 파싱
-  snapshotId: number; // 프론트엔드 캐시 기준이 되는 snapshotId
-  endpoints: EndpointSummary[]; // 사이드바용 경량 목록, 삭제 포함 전체 목록
+  latestSnapshotId: number; // 서버의 현재 최신 스냅샷. 배너 판정 전용(FR-10.6)
 };
 
 // Prisma에서 정의한 Membership 모델
@@ -636,29 +656,46 @@ type ProjectView = {
 //   role: ROLE; isDeleted: boolean; createdAt: string;
 // };
 
-// 사이드바 목록용 경량(operationJson 제외)
-type EndpointSummary = {
+// Spec.operations 원소. id 는 Endpoint.id — 댓글 앵커, 라우팅에 쓴다
+type SpecOperation = {
   id: number;
   path: string;
   method: string;
   summary: string | null;
   tags: string[];
   isDeleted: boolean;
+  // 살아 있는 엔드포인트는 요청 스냅샷의 rawJson 에서,
+  // 삭제된 엔드포인트는 Endpoint 행에 남은 마지막 생존 시점 값에서 온다
+  // (삭제 후에는 갱신이 멈추므로 "현재 값"이 아니라 "얼어붙은 값"이다).
+  // 삭제분은 요청 스냅샷보다 먼저 생성된 것만 실린다 — 3절 findSpec 참고
+  operationJson: unknown;
 };
 
-// 상세 응답: 실제 사용하는 필드만 명시
-// 내부 필드 projectId 등 제외.
-// operationJson은 출력용 JsonValue
-type EndpointDetail = {
-  id: number;
+// GET /api/projects/:id/spec 응답 — 한 스냅샷의 전부.
+// 이 응답 하나가 화면의 스펙 내용 전체를 공급하므로, 필드 간 버전이 어긋날 수 없다
+type Spec = {
+  snapshotId: number; // 이 응답이 나온 스냅샷. ?snapshotId 가 없거나 최신 이상이면 최신
+  title: string;
+  version: string;
+  oasVersion: string;
+  description: string | null;
+  components: unknown; // components JSON. 서버는 전달만 하고, 프론트가 캐싱 + 파싱
+  operations: SpecOperation[];
+};
+
+// 파싱 내부 타입(utils/spec.type.ts) — 응답으로 나가지 않아 Map 을 쓸 수 있다
+type SnapshotOperation = {
   path: string;
   method: string;
-  operationId: string | null;
   summary: string | null;
   tags: string[];
-  operationJson: unknown; // operation JSON. 서버는 전달만 하고, 프론트가 파싱
-  isDeleted: boolean;
-  snapshotId: number; // 정합성 비교용 최신 스냅샷 id
+  operationJson: Record<string, unknown>;
+};
+type SnapshotContent = {
+  info: { title: string; version: string; description: string | null };
+  oasVersion: string;
+  components: unknown;
+  operations: Map<string, SnapshotOperation>; // key(path, method) 를 키로 하는 Map
 };
 
 // Prisma에서 정의한 원형 Comment 모델
@@ -788,6 +825,7 @@ type CreateNotificationDto = {
 - `createSnapshot` 반환 — id만(`Promise<number>`). 호출부가 snapshotId만 사용.
 - 댓글 반영 방식 — 작성/수정/삭제 후 프론트는 TanStack Query 로 mutation → invalidate → `findComments` refetch 과정을 거친다. write 계열 반환은 `Comment` 유지, 조회는 `CommentTree[]`.
 - 단건/단일 Comment 조회 API 없음 — 소비처 없음, `findComments` 전량 로드로 해결.
+- 스펙 버전 보관 — 옛 버전의 유일한 출처는 append-only인 `SpecSnapshot.rawJson`이다. `Endpoint` 행의 스펙 사본은 삭제 대비 백업으로, 산 것을 조회할 때는 읽지 않는다. 서버 캐시는 두지 않는다 — 100개 엔드포인트 규모에서 스냅샷 파싱이 수 ms라 불필요하고, 필요해지면 snapshotId 키 LRU로 순수 최적화로 얹는다(append-only라 무효화 불요).
 - 멘션 알림 클릭 UX — `/projects/:projectId/endpoints/:endpointId?comment=:commentId`로 이동, 해당 댓글 하이라이트+스크롤(초대 알림은 프로젝트로만 이동). 페이지네이션 없음. 대댓글 기본 펼침, 사용자가 접어둔 경우에만 최상위 부모 펼침. 백엔드에 댓글 조회용 별도 API 불필요(프론트에서 상태 제어).
 
 [백엔드 기능 정의서 v0.1](https://app.notion.com/p/v0-1-396efb1b668b80389ddeed3142dd2b38?pvs=21)

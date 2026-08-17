@@ -9,6 +9,7 @@
 | v0.5 | 2026.07.27 MON       | **코드 실측 대조 반영.** `GET /api/users/me` 신설(구현 완료분 누락) — 토큰의 유저가 없는 경우도 404가 아니라 401로 통일. **댓글 이동을 엔드포인트 단위로 전환**(FR-12 v0.7) — `PATCH /api/comments/:id/move` → `PATCH /api/endpoints/:id/comments/move`, 절 위치도 comments → endpoints, `@ProjectScope('comment')` → `@ProjectScope('endpoint')`. 이동 단위가 스레드에서 엔드포인트 전량으로 바뀌면서 대댓글 단독 이동 400 조항 삭제. 댓글 수정/삭제 Errors에 **이미 삭제된 댓글 400** 추가. 0-2 인증 절에 `users/me` 흐름 추가. **멤버 목록 응답을 `MemberView[]`로 전환** — `Membership` 원형에 `userName`이 없어 프론트가 화면을 그릴 수 없었다. `{ user: PublicUser; role: ROLE }` 형태. 초대/제외 응답은 원형 유지(변경 후 재조회 원칙). **`UserRef` / `EndpointRef` 신설** — 멘션 두 필드와 `ReactionSummary.users`가 공유하는 경량 참조 타입. `ReactionSummary`에 **`users` 추가** — 리액션을 남긴 사람 목록. 개수만으로는 누가 확인 중이고 누가 처리했는지 알 수 없어 리뷰 도구로서 반쪽이었다. **AI 요약 Errors 명시** — 댓글 0건 400, AI 계정 미시드 500, Azure 호출 실패 500. 수집 대상에서 이전 AI 요약 댓글을 제외함을 기록. |
 | v0.6 | 2026.07.31 FRI       | **멘션 대상 검증에서 `isDeleted` 조건 제거.** `checkMentionUsers`의 멤버십 조회와 `checkMentionEndpoints`의 엔드포인트 조회에서 각각 `isDeleted: false`를 뺐다. 제외된 멤버나 삭제된 엔드포인트를 멘션했던 옛 댓글이 **수정 자체가 불가**였다 — 본문만 고치려 해도 멘션 id가 다시 실려 400이 났다. 화면에서도 칩 대신 `#92\|` 원문 토큰이 노출돼 FR-11.3(엔드포인트를 조회하는 모든 기능은 삭제 여부를 일관되게 반영)에 어긋났다. FR-7.4(멘션 기록은 댓글과 별개로 유지)도 같은 방향이다. `projectId` 조건은 남아 있어 남의 프로젝트 대상과 멤버였던 적 없는 사용자는 여전히 차단된다. 새로 멘션할 수 있는 대상의 제한(활성 멤버, 미삭제 엔드포인트)은 프론트 후보 목록이 담당한다. 알림은 `syncMemberMentions`의 신규 추가분에만 나가므로 제외된 멤버에게 발송되지 않는다.                                                                                                                                                                                                                                                                                                                                                                |
 | v0.6 | 2026.08.13 THU       | **`GET /api/endpoints/:id`에 `?snapshotId` 쿼리 파라미터 추가.** 지정하면 그 스냅샷 기준으로 응답한다 — 배너가 떠 있는 동안 중앙 상세가 사이드바와 같은 버전을 보게 하기 위함(FR-10.6). `EndpointDetail.snapshotId`의 의미를 **"이 응답이 나온 스냅샷"**으로 바꾸고, 배너 판정용 최신값은 **`latestSnapshotId`로 분리**. 한 필드가 두 의미를 겸해 프론트가 출처 버전으로 오해하던 문제를 해소. 그 스냅샷에 없는 엔드포인트는 **404 `NOT_IN_SNAPSHOT`**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| v0.7 | 2026.08.15 SAT       | **스펙 조회를 스냅샷 단위 단일 응답으로 재편.** 스펙 내용이 두 채널(프로젝트 진입, 엔드포인트 상세)로 나뉘어 오면서 버전을 맞출 장치가 없었고, 배너가 떠 있는 동안 화면 조각들이 서로 다른 버전을 보여줬다. `GET /projects/:id`를 **`ProjectMeta`**(설정, 권한, `latestSnapshotId`)로 축소 — 커밋으로 바뀌는 필드를 걷어내 30초 폴링해도 스펙 화면과 어긋나지 않으며, 배너 판정이 이 응답 하나로 가능해진다. **`GET /projects/:id/spec?snapshotId=N` 신설** — 한 스냅샷의 전부(info 메타, components, 전체 operation)를 한 응답으로 준다. 산 엔드포인트는 요청 스냅샷의 rawJson에서, 삭제된 것은 `Endpoint` 행에 남은 마지막 생존 시점 백업에서 온다. **`GET /api/endpoints/:id` 폐기** — 엔드포인트 선택은 프론트가 받아둔 spec에서 고르는 것이라 서버 왕복이 없다. `NOT_IN_SNAPSHOT`도 함께 소멸(그 버전 스펙에 없으면 목록에도 없다). `POST /projects`, `PATCH /projects/:id` 응답을 `ProjectMeta`로 — 생성 응답에서 프론트가 읽는 것은 이동용 `id`뿐이고, 수정 화면(설정)이 쓰는 것이 meta다. `ProjectView`, `EndpointSummary`, `EndpointDetail` 삭제. compression 미들웨어 추가(spec 응답 10550 → 1734 bytes).                        |
 
 > **표기 주의**
 >
@@ -187,24 +188,43 @@ type ProjectSummary = {
   isDeleted: boolean;
 };
 
-// 사이드바 경량 목록 (operationJson 제외)
-type EndpointSummary = {
+// GET /api/projects/:id 응답
+// 앵커가 있는 화면(SpecDetail)은 이 응답을 그리지 않는다 — 거기는 spec 만 그린다.
+// 30초 폴링 대상이라, 여기 실린 값을 스펙 화면에 그리면 앵커에 고정된 내용과 어긋난다.
+// title 만 예외다 — 앵커가 없는 설정 화면 브레드크럼 전용이고, 거기서는 최신이 정답이다.
+type ProjectMeta = {
+  id: number;
+  role: ROLE;
+  title: string;
+  specJsonUrl: string;
+  tryItBaseUrl: string | null;
+  latestSnapshotId: number; // 서버의 현재 최신 스냅샷. 배너 판정 전용(FR-10.6)
+};
+
+// Spec.operations 원소. id 는 Endpoint.id — 댓글 앵커, 라우팅에 쓴다
+type SpecOperation = {
   id: number;
   path: string;
   method: string;
   summary: string | null;
   tags: string[];
   isDeleted: boolean;
+  // 살아 있는 엔드포인트는 요청 스냅샷의 rawJson 에서,
+  // 삭제된 엔드포인트는 Endpoint 행에 남은 마지막 생존 시점 값에서 온다
+  // (삭제 후에는 갱신이 멈추므로 "현재 값"이 아니라 "얼어붙은 값"이다)
+  operationJson: unknown;
 };
 
-// 프로젝트 진입 응답
-type ProjectView = {
-  project: ProjectSummary;
-  specJsonUrl: string;
-  tryItBaseUrl: string | null;
+// GET /api/projects/:id/spec 응답 — 한 스냅샷의 전부.
+// 이 응답 하나가 화면의 스펙 내용 전체를 공급하므로, 필드 간 버전이 어긋날 수 없다
+type Spec = {
+  snapshotId: number; // 이 응답이 나온 스냅샷. ?snapshotId 가 없거나 최신 이상이면 최신
+  title: string;
+  version: string;
+  oasVersion: string;
+  description: string | null;
   components: unknown; // components JSON, 프론트가 캐싱·파싱
-  snapshotId: number; // 프론트 캐시 기준 스냅샷 id
-  endpoints: EndpointSummary[]; // 삭제 포함 전체 경량 목록
+  operations: SpecOperation[];
 };
 
 type SpecCommitResult = { snapshotId: number; diff: EndpointDiff };
@@ -234,7 +254,7 @@ type MemberView = {
 - 권한: `Auth` (프로젝트가 아직 없어 멤버십 검증은 못하고, 로그인 여부만 검증. 생성자 = Owner)
 - Request: `CreateProjectDto` : `{ specJsonUrl: string; tryItBaseUrl?: string }`
 - 처리: `specJsonUrl` fetch, 검증 → 메타(title/description/version/oasVersion) 자동 추출 → Owner 멤버십 + 첫 스냅샷·엔드포인트 생성
-- Response `201`: `ProjectView`
+- Response `201`: `ProjectMeta` (프론트는 `id`로 이동만 하고, 진입 화면이 meta와 spec을 각자 받아온다)
 - Errors: `400`
   - 스펙 로딩 실패할 경우에는 `INVALID_SPEC | UNSUPPORTED_VERSION | SPEC_LOAD_ERROR`
 
@@ -243,16 +263,50 @@ type MemberView = {
 - 권한: `Auth` (계층 1 — 단일 projectId 없음, 서비스가 멤버쉽테이블에서 필터링함.)
 - Response `200`: `ProjectSummary[]`
 
-### `GET /api/projects/:id` — 프로젝트 진입
+### `GET /api/projects/:id` — 프로젝트 메타
 
 - 권한: `Member` (계층 2)
-- Response `200`: `ProjectView`
+- Response `200`: `ProjectMeta`
+- 비고: 프론트가 30초 간격으로 폴링해 `latestSnapshotId`로 스펙 갱신을 감지한다(FR-10.6).
+  스펙 내용은 `GET /api/projects/:id/spec`이 담당한다
+- 비고: `title`은 설정 화면 브레드크럼 전용이다. 스펙 화면의 프로젝트명은 `Spec.title`을 쓴다 —
+  같은 값이지만 읽는 시점이 다르다(meta는 폴링이라 최신, spec은 앵커 시점)
+
+### `GET /api/projects/:id/spec` — 스펙 조회 (한 스냅샷 전체)
+
+- 권한: `Member` (계층 2)
+- Query: `snapshotId?: number` — 지정하면 그 스냅샷 기준. 생략하거나 최신 이상이면 최신
+- Response `200`: `Spec`
+- Errors
+  - `404` — 존재하지 않는 옛 스냅샷 id (타 프로젝트 스냅샷 id 포함 — 리소스 은닉)
+  - `400` — `snapshotId`가 정수가 아님(`ParseIntPipe`)
+
+**operations 조립 — 출처가 엔드포인트 상태로 유일하게 정해진다**
+
+| Endpoint 행       | 요청 스냅샷의 paths | 행의 생성 시점  | 결과                                                            |
+| ----------------- | ------------------- | --------------- | --------------------------------------------------------------- |
+| 있음              | 있음                | —               | 산 것. 내용은 스냅샷, `id`는 행. `isDeleted: false`             |
+| `isDeleted: true` | 없음                | 스냅샷보다 먼저 | 삭제분. 행에 남은 마지막 생존 시점 값 그대로. `isDeleted: true` |
+| `isDeleted: true` | 없음                | 스냅샷보다 나중 | 그 버전에 없던 것. **목록에서 제외**                            |
+| 살아 있음         | 없음                | —               | 그 버전에 아직 없던 것. **목록에서 제외**                       |
+
+최신을 넘는 `snapshotId`는 에러가 아니라 최신으로 처리한다. 프론트 캐시가
+서버보다 앞설 수 없으므로, 앞서는 값은 조작이거나 무의미한 요청이다.
+
+- 참고: 삭제된 엔드포인트의 표시 내용은 **마지막 생존 시점 기준**이며 요청 스냅샷을
+  따르지 않는다. 그 버전 스펙에 존재하지 않았던 것의 "그 버전 값"이란 없다 —
+  삭제 표시가 붙은 아카이브 사본이다.
+- 참고: 생성 시점 비교는 `Endpoint.createdAt`과 `SpecSnapshot.createdAt`으로 한다.
+  `Endpoint.createdAt`은 `syncEndpoints`의 `upsert`가 `update` 절에서 건드리지 않아
+  최초 등장 시점으로 고정된다(소프트 삭제 후 부활해도 바뀌지 않는다). 이 조건이 없으면
+  스냅샷 N 이후에 생겼다가 삭제된 엔드포인트가 `?snapshotId=N` 응답에 섞인다 —
+  그 시점에 존재하지 않았던 것이다.
 
 ### `PATCH /api/projects/:id` — 프로젝트 수정 `[Owner]`
 
 - 권한: `Owner` (계층 2 + `@ProjectRole(OWNER)`)
 - Request: `UpdateProjectDto` — `{ tryItBaseUrl?: string }` (tryItBaseUrl만 수정, 스펙 커밋 없음)
-- Response `200`: `ProjectSummary`
+- Response `200`: `ProjectMeta`
 - 참고: title/description/version/oasVersion은 스펙 리로드로만 갱신, 직접 수정 불가
 
 ### `DELETE /api/projects/:id` — 프로젝트 삭제 `[Owner]`
@@ -305,51 +359,13 @@ type MemberView = {
 
 ---
 
-## 4. endpoints — 엔드포인트 상세
+## 4. endpoints
 
-### 4-1. 응답 타입
-
-```tsx
-type EndpointDetail = {
-  id: number;
-  path: string;
-  method: string;
-  operationId: string | null;
-  summary: string | null;
-  tags: string[];
-  operationJson: unknown; // operation JSON, 프론트가 파싱
-  isDeleted: boolean;
-  snapshotId: number; // 이 응답이 나온 스냅샷
-  latestSnapshotId: number; // 서버의 현재 최신 스냅샷 (배너 판정용)
-};
-
-// 'operationJson'부터 'isDeleted'까지는 'snapshotId' 기준으로 정렬된다.
-// 'id', 'path', 'method'는 unique 키라 버전과 무관하다.
-```
-
-### `GET /api/endpoints/:id` — 엔드포인트 상세
-
-- 권한: `Member` (계층 3 : `@ProjectScope('endpoint')`)
-- Query: `snapshotId?: number` — 지정하면 그 스냅샷 기준으로 응답. 생략하거나 최신 이상이면 최신
-- Response `200`: `EndpointDetail`
-- Errors
-  - `404` — 없는 엔드포인트, 또는 남의 프로젝트 것(리소스 은닉)
-  - `404` `code: NOT_IN_SNAPSHOT` — 그 스냅샷 시점에 없던 엔드포인트. 커밋 이후 추가된 것을 옛 버전으로 조회하면 발생
-  - `400` — `snapshotId`가 정수가 아님(`ParseIntPipe`)
-
-**동작**
-
-| 요청                       | 응답 기준             | 응답 `snapshotId` |
-| -------------------------- | --------------------- | ----------------- |
-| 생략 / `>= latest`         | 최신                  | `latest`          |
-| `< latest`, 그 버전에 있음 | 요청한 버전           | 요청값            |
-| `< latest`, 그 버전에 없음 | 404 `NOT_IN_SNAPSHOT` | —                 |
-
-최신을 넘는 값은 에러가 아니라 최신으로 처리한다. 상세가 프론트 캐시보다 앞서는 방향은 사용자에게 물을 것이 없어 배너 조건도 단방향(`>`)이다.
-
-응답의 `operationJson`, `operationId`, `summary`, `tags`, `isDeleted`는 모두 응답 `snapshotId` 기준으로 정렬된다. 옛 버전을 요청하면 그 시점에 살아 있던 엔드포인트이므로 `isDeleted`는 `false`다.
-
-- 참고: `latestSnapshotId` > 프론트 캐시 `snapshotId`면 프론트가 "스펙 업데이트됨" 배너를 띄우고, 사용자가 새로고침을 눌러야 앵커가 최신으로 교체된다(FR-10.6)
+엔드포인트 단독 조회 라우트는 없다(v0.7에서 폐기). 스펙 내용은
+`GET /api/projects/:id/spec`의 `operations`에 전량 포함되며, 엔드포인트 선택은
+프론트가 받아둔 spec에서 고른다. `/api/endpoints/:id/...` 경로는 댓글 계열
+라우트(5장)가 계속 쓴다 — `@ProjectScope('endpoint')` 역참조는 가드 소관이라
+이 변경과 무관하다.
 
 ---
 
@@ -566,32 +582,32 @@ type Notification = {
 
 ## 부록. 라우트 · 입력 통합 요약
 
-| Method | Path                                | 함수               | Body (DTO)            | Path param     | Query param | 권한                        | 가드계층 | @ProjectScope | @ProjectRole |
-| ------ | ----------------------------------- | ------------------ | --------------------- | -------------- | ----------- | --------------------------- | -------- | ------------- | ------------ |
-| POST   | `/api/auth/login`                   | login              | `LoginDto`            | —              | —           | 공개                        | 0        | —             | —            |
-| POST   | `/api/users`                        | createUser         | `CreateUserDto`       | —              | —           | 공개                        | 0        | —             | —            |
-| GET    | `/api/users/search`                 | findByEmail        | —                     | —              | `email`     | Auth                        | 1        | —             | —            |
-| GET    | `/api/users/me`                     | findMe             | —                     | —              | —           | Auth                        | 1        | —             | —            |
-| POST   | `/api/projects`                     | createProject      | `CreateProjectDto`    | —              | —           | Auth                        | 1        | —             | —            |
-| GET    | `/api/projects`                     | findMyProjects     | —                     | —              | —           | Auth                        | 1        | —             | —            |
-| GET    | `/api/projects/:id`                 | findProject        | —                     | `id`           | —           | Member                      | 2        | —             | —            |
-| PATCH  | `/api/projects/:id`                 | updateProject      | `UpdateProjectDto`    | `id`           | —           | Owner                       | 2        | —             | `OWNER`      |
-| DELETE | `/api/projects/:id`                 | softDeleteProject  | —                     | `id`           | —           | Owner                       | 2        | —             | `OWNER`      |
-| POST   | `/api/projects/:id/spec-commits`    | commitSpec         | `CommitSpecDto`       | `id`           | —           | Owner                       | 2        | —             | `OWNER`      |
-| POST   | `/api/projects/:id/members`         | inviteMember       | `CreateMembershipDto` | `id`           | —           | Owner                       | 2        | —             | `OWNER`      |
-| DELETE | `/api/projects/:id/members/:userId` | removeMember       | —                     | `id`, `userId` | —           | Owner                       | 2        | —             | `OWNER`      |
-| GET    | `/api/projects/:id/members`         | findMembers        | —                     | `id`           | —           | Member                      | 2        | —             | —            |
-| GET    | `/api/endpoints/:id`                | findEndpointDetail | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
-| GET    | `/api/endpoints/:id/comments`       | findComments       | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
-| POST   | `/api/endpoints/:id/comments`       | createComment      | `CreateCommentDto`    | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
-| POST   | `/api/endpoints/:id/ai-summary`     | summarizeThread    | —                     | `id`           | —           | Member                      | 3        | `endpoint`    | —            |
-| PATCH  | `/api/endpoints/:id/comments/move`  | moveComments       | `MoveCommentDto`      | `id`           | —           | Owner                       | 3        | `endpoint`    | `OWNER`      |
-| POST   | `/api/comments/:id/replies`         | createReply        | `CreateCommentDto`    | `id`           | —           | Member                      | 3        | `comment`     | —            |
-| POST   | `/api/comments/:id/reactions`       | toggleReaction     | `CreateReactionDto`   | `id`           | —           | Member                      | 3        | `comment`     | —            |
-| PATCH  | `/api/comments/:id`                 | updateComment      | `UpdateCommentDto`    | `id`           | —           | Member + 본인(assertAuthor) | 3        | `comment`     | —            |
-| DELETE | `/api/comments/:id`                 | softDeleteComment  | —                     | `id`           | —           | Member + 본인(assertAuthor) | 3        | `comment`     | —            |
-| GET    | `/api/notifications`                | findNotifications  | —                     | —              | —           | Auth                        | 1        | —             | —            |
-| PATCH  | `/api/notifications/:id/read`       | markAsRead         | —                     | `id`           | —           | Auth                        | 1        | —             | —            |
+| Method | Path                                | 함수              | Body (DTO)            | Path param     | Query param  | 권한                        | 가드계층 | @ProjectScope | @ProjectRole |
+| ------ | ----------------------------------- | ----------------- | --------------------- | -------------- | ------------ | --------------------------- | -------- | ------------- | ------------ |
+| POST   | `/api/auth/login`                   | login             | `LoginDto`            | —              | —            | 공개                        | 0        | —             | —            |
+| POST   | `/api/users`                        | createUser        | `CreateUserDto`       | —              | —            | 공개                        | 0        | —             | —            |
+| GET    | `/api/users/search`                 | findByEmail       | —                     | —              | `email`      | Auth                        | 1        | —             | —            |
+| GET    | `/api/users/me`                     | findMe            | —                     | —              | —            | Auth                        | 1        | —             | —            |
+| POST   | `/api/projects`                     | createProject     | `CreateProjectDto`    | —              | —            | Auth                        | 1        | —             | —            |
+| GET    | `/api/projects`                     | findMyProjects    | —                     | —              | —            | Auth                        | 1        | —             | —            |
+| GET    | `/api/projects/:id`                 | findProjectMeta   | —                     | `id`           | —            | Member                      | 2        | —             | —            |
+| GET    | `/api/projects/:id/spec`            | findSpec          | —                     | `id`           | `snapshotId` | Member                      | 2        | —             | —            |
+| PATCH  | `/api/projects/:id`                 | updateProject     | `UpdateProjectDto`    | `id`           | —            | Owner                       | 2        | —             | `OWNER`      |
+| DELETE | `/api/projects/:id`                 | softDeleteProject | —                     | `id`           | —            | Owner                       | 2        | —             | `OWNER`      |
+| POST   | `/api/projects/:id/spec-commits`    | commitSpec        | `CommitSpecDto`       | `id`           | —            | Owner                       | 2        | —             | `OWNER`      |
+| POST   | `/api/projects/:id/members`         | inviteMember      | `CreateMembershipDto` | `id`           | —            | Owner                       | 2        | —             | `OWNER`      |
+| DELETE | `/api/projects/:id/members/:userId` | removeMember      | —                     | `id`, `userId` | —            | Owner                       | 2        | —             | `OWNER`      |
+| GET    | `/api/projects/:id/members`         | findMembers       | —                     | `id`           | —            | Member                      | 2        | —             | —            |
+| GET    | `/api/endpoints/:id/comments`       | findComments      | —                     | `id`           | —            | Member                      | 3        | `endpoint`    | —            |
+| POST   | `/api/endpoints/:id/comments`       | createComment     | `CreateCommentDto`    | `id`           | —            | Member                      | 3        | `endpoint`    | —            |
+| POST   | `/api/endpoints/:id/ai-summary`     | summarizeThread   | —                     | `id`           | —            | Member                      | 3        | `endpoint`    | —            |
+| PATCH  | `/api/endpoints/:id/comments/move`  | moveComments      | `MoveCommentDto`      | `id`           | —            | Owner                       | 3        | `endpoint`    | `OWNER`      |
+| POST   | `/api/comments/:id/replies`         | createReply       | `CreateCommentDto`    | `id`           | —            | Member                      | 3        | `comment`     | —            |
+| POST   | `/api/comments/:id/reactions`       | toggleReaction    | `CreateReactionDto`   | `id`           | —            | Member                      | 3        | `comment`     | —            |
+| PATCH  | `/api/comments/:id`                 | updateComment     | `UpdateCommentDto`    | `id`           | —            | Member + 본인(assertAuthor) | 3        | `comment`     | —            |
+| DELETE | `/api/comments/:id`                 | softDeleteComment | —                     | `id`           | —            | Member + 본인(assertAuthor) | 3        | `comment`     | —            |
+| GET    | `/api/notifications`                | findNotifications | —                     | —              | —            | Auth                        | 1        | —             | —            |
+| PATCH  | `/api/notifications/:id/read`       | markAsRead        | —                     | `id`           | —            | Auth                        | 1        | —             | —            |
 
 - 인증 헤더: 공개 라우트(계층 0)를 제외한 모든 라우트는 `Authorization: Bearer <token>` 필요(0-2). 라우트별로 반복 표기하지 않음.
 - AuthUser: 컨트롤러 시그니처의 `user`는 JWT에서 서버가 주입(`@CurrentUser`)하는 값 — 클라이언트 입력이 아니므로 표에서 제외.

@@ -74,6 +74,8 @@ model SpecSnapshot {
   project   Project  @relation(fields: [projectId], references: [id])
   rawJson   Json
   createdAt DateTime @default(now())
+
+  @@index([projectId, id])
 }
 
 // 프로젝트 사용자
