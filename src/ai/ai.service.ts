@@ -23,7 +23,6 @@ export class AiService {
     this.deploymentName = deploymentName;
   }
   async generateSummary(thread: SummaryInput[]): Promise<string> {
-    // Azure AI Foundry 클라이언트 호출 → 요약 string 반환 (SDK 세부는 구현 시점)
     const prompt = this.buildPrompt(thread);
     const url = `${this.endpoint}/openai/v1/chat/completions`;
     const response = await fetch(url, {
@@ -47,9 +46,10 @@ export class AiService {
             content: prompt,
           },
         ],
-        max_completion_tokens: 300,
+        max_completion_tokens: 2000,
         reasoning_effort: 'minimal',
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
       const errorBody = await response.text();
