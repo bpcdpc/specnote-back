@@ -48,6 +48,7 @@ export class AiService {
           },
         ],
         max_completion_tokens: 300,
+        reasoning_effort: 'minimal',
       }),
     });
     if (!response.ok) {
@@ -58,9 +59,15 @@ export class AiService {
     }
     const data = await response.json();
     const summary = data.choices?.[0]?.message?.content;
+
     if (!summary) {
+      console.error('AI 응답 비어있음', {
+        finish_reason: data.choices?.[0]?.finish_reason,
+        usage: data.usage,
+      });
       throw new InternalServerErrorException('요약 결과를 받지 못했습니다.');
     }
+
     return summary.trim();
   }
   private buildPrompt(thread: SummaryInput[]): string {
