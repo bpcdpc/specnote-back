@@ -48,7 +48,6 @@ export class AiService {
           },
         ],
         max_completion_tokens: 300,
-        temperature: 0.3,
       }),
     });
     if (!response.ok) {
